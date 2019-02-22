@@ -1,0 +1,19 @@
+version: '2'
+
+services:
+  php:
+    image: prooph/php:7.2-cli
+    volumes:
+      - .:/app
+    environment:
+      - PROOPH_ENV=dev
+      - PDO_DSN=pgsql:host=postgres port=5432 dbname=event_engine
+      - PDO_USER=postgres
+      - PDO_PWD=
+
+  postgres:
+    image: postgres:alpine
+    ports:
+      - 5432:5432
+    environment:
+      - POSTGRES_DB=event_engine

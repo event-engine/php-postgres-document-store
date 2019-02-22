@@ -1,0 +1,73 @@
+{
+  "name": "event-engine/php-postgres-document-store",
+  "description": "PostgreSQL Document Store for Event Engine",
+  "homepage": "http://prooph.de/",
+  "license": "BSD-3-Clause",
+  "authors": [
+    {
+      "name": "Alexander Miertsch",
+      "email": "contact@prooph.de",
+      "homepage": "http://www.prooph.de"
+    },
+    {
+      "name": "Sandro Keil",
+      "email": "contact@prooph.de",
+      "homepage": "http://prooph-software.com/"
+    }
+  ],
+  "require": {
+    "php": "^7.1",
+    "ext-pdo": "*"
+  },
+  "require-dev": {
+    "event-engine/php-engine": "dev-master",
+    "infection/infection": "^0.11.0",
+    "malukenho/docheader": "^0.1.4",
+    "phpspec/prophecy": "^1.7",
+    "phpstan/phpstan": "^0.10.5",
+    "phpstan/phpstan-strict-rules": "^0.10.1",
+    "phpunit/phpunit": "^8.0",
+    "prooph/bookdown-template": "^0.2.3",
+    "prooph/php-cs-fixer-config": "^0.3",
+    "roave/security-advisories": "dev-master",
+    "satooshi/php-coveralls": "^1.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "EventEngine\\DocumentStore\\Postgres\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "EventEngine\\DocumentStoreTest\\Postgres\\": "tests/"
+    }
+  },
+  "config": {
+    "sort-packages": true,
+    "platform": {
+    }
+  },
+  "minimum-stability": "dev",
+  "prefer-stable": true,
+  "repositories": [
+    {
+      "type": "composer",
+      "url": "https://packagist.org"
+    },
+    {
+      "packagist": false
+    },
+    {
+      "type": "vcs",
+      "url": "https://github.com/event-engine/php-engine"
+    }
+  ],
+  "scripts": {
+    "test": "vendor/bin/phpunit",
+    "test-coverage": "phpunit --colors=always --coverage-clover clover.xml",
+    "cs": "php-cs-fixer fix -v --diff --dry-run",
+    "cs-fix": "php-cs-fixer fix -v --diff",
+    "analyze": "phpstan analyze -l max -c ./phpstan.installer.neon ./src",
+    "infection": "infection"
+  }
+}
