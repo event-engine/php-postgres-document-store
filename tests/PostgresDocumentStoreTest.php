@@ -11,11 +11,16 @@ declare(strict_types=1);
 
 namespace EventEngine\DocumentStoreTest\Postgres;
 
+use EventEngine\DocumentStore\Filter\AnyOfDocIdFilter;
+use EventEngine\DocumentStore\Filter\AnyOfFilter;
+use EventEngine\DocumentStore\Filter\DocIdFilter;
+use EventEngine\DocumentStore\Filter\NotFilter;
 use PHPUnit\Framework\TestCase;
 use EventEngine\DocumentStore\FieldIndex;
 use EventEngine\DocumentStore\Index;
 use EventEngine\DocumentStore\MultiFieldIndex;
 use EventEngine\DocumentStore\Postgres\PostgresDocumentStore;
+use Ramsey\Uuid\Uuid;
 
 class PostgresDocumentStoreTest extends TestCase
 {
@@ -132,6 +137,146 @@ class PostgresDocumentStoreTest extends TestCase
             $indexes[1]['indexdef']
         );
         $this->assertStringStartsWith('CREATE UNIQUE INDEX', $indexes[1]['indexdef']);
+    }
+
+    /**
+     * @test
+     */
+    public function it_handles_any_of_filter()
+    {
+        $collectionName = 'test_any_of_filter';
+        $this->documentStore->addCollection($collectionName);
+
+        $doc1 = ["foo" => "bar"];
+        $doc2 = ["foo" => "baz"];
+        $doc3 = ["foo" => "bat"];
+
+        $docs = [$doc1, $doc2, $doc3];
+
+        array_walk($docs, function (array $doc) use ($collectionName) {
+            $this->documentStore->addDoc($collectionName, Uuid::uuid4()->toString(), $doc);
+        });
+
+        $filteredDocs = $this->documentStore->filterDocs(
+            $collectionName,
+            new AnyOfFilter("foo", ["bar", "bat"])
+        );
+
+        $this->assertCount(2, $filteredDocs);
+    }
+
+    /**
+     * @test
+     */
+    public function it_handles_not_any_of_filter()
+    {
+        $collectionName = 'test_not_any_of_filter';
+        $this->documentStore->addCollection($collectionName);
+
+        $doc1 = ["foo" => "bar"];
+        $doc2 = ["foo" => "baz"];
+        $doc3 = ["foo" => "bat"];
+
+        $docs = [$doc1, $doc2, $doc3];
+
+        array_walk($docs, function (array $doc) use ($collectionName) {
+            $this->documentStore->addDoc($collectionName, Uuid::uuid4()->toString(), $doc);
+        });
+
+        $filteredDocs = $this->documentStore->filterDocs(
+            $collectionName,
+            new NotFilter(new AnyOfFilter("foo", ["bar", "bat"]))
+        );
+
+        $filteredDocs = iterator_to_array($filteredDocs);
+
+        $this->assertCount(1, $filteredDocs);
+
+        $this->assertSame('baz', $filteredDocs[0]['foo']);
+    }
+
+    /**
+     * @test
+     */
+    public function it_handles_doc_id_filter()
+    {
+        $collectionName = 'test_doc_id_filter';
+        $this->documentStore->addCollection($collectionName);
+
+        $firstDocId = Uuid::uuid4()->toString();
+        $secondDocId = Uuid::uuid4()->toString();
+
+        $this->documentStore->addDoc($collectionName, $firstDocId, ['foo' => 'bar']);
+        $this->documentStore->addDoc($collectionName, $secondDocId, ['foo' => 'bat']);
+
+        $filteredDocs = \iterator_to_array($this->documentStore->filterDocs(
+            $collectionName,
+            new DocIdFilter($secondDocId)
+        ));
+
+        $this->assertCount(1, $filteredDocs);
+
+        $this->assertSame('bat', $filteredDocs[0]['foo']);
+    }
+
+    /**
+     * @test
+     */
+    public function it_handles_any_of_doc_id_filter()
+    {
+        $collectionName = 'test_any_of_doc_id_filter';
+        $this->documentStore->addCollection($collectionName);
+
+        $firstDocId = Uuid::uuid4()->toString();
+        $secondDocId = Uuid::uuid4()->toString();
+        $thirdDocId = Uuid::uuid4()->toString();
+
+        $this->documentStore->addDoc($collectionName, $firstDocId, ['foo' => 'bar']);
+        $this->documentStore->addDoc($collectionName, $secondDocId, ['foo' => 'bat']);
+        $this->documentStore->addDoc($collectionName, $thirdDocId, ['foo' => 'baz']);
+
+        $filteredDocs = \iterator_to_array($this->documentStore->filterDocs(
+            $collectionName,
+            new AnyOfDocIdFilter([$firstDocId, $thirdDocId])
+        ));
+
+        $this->assertCount(2, $filteredDocs);
+
+        $vals = array_map(function (array $doc) {
+            return $doc['foo'];
+        }, $filteredDocs);
+
+        $this->assertEquals(['bar', 'baz'], $vals);
+    }
+
+    /**
+     * @test
+     */
+    public function it_handles_not_any_of_id_filter()
+    {
+        $collectionName = 'test_any_of_doc_id_filter';
+        $this->documentStore->addCollection($collectionName);
+
+        $firstDocId = Uuid::uuid4()->toString();
+        $secondDocId = Uuid::uuid4()->toString();
+        $thirdDocId = Uuid::uuid4()->toString();
+
+        $this->documentStore->addDoc($collectionName, $firstDocId, ['foo' => 'bar']);
+        $this->documentStore->addDoc($collectionName, $secondDocId, ['foo' => 'bat']);
+        $this->documentStore->addDoc($collectionName, $thirdDocId, ['foo' => 'baz']);
+
+        $filteredDocs = \iterator_to_array($this->documentStore->filterDocs(
+            $collectionName,
+            new NotFilter(new AnyOfDocIdFilter([$firstDocId, $thirdDocId]))
+        ));
+
+        $this->assertCount(1, $filteredDocs);
+
+        $vals = array_map(function (array $doc) {
+            return $doc['foo'];
+        }, $filteredDocs);
+
+        $this->assertEquals(['bat'], $vals);
     }
 
     private function getIndexes(string $collectionName): array

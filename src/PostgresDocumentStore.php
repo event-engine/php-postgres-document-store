@@ -393,6 +393,15 @@ EOT;
         }
 
         switch (get_class($filter)) {
+            case DocumentStore\Filter\DocIdFilter::class:
+                /** @var DocumentStore\Filter\DocIdFilter $filter */
+                return ["id = :a$argsCount", ["a$argsCount" => $filter->val()], ++$argsCount];
+            case DocumentStore\Filter\AnyOfDocIdFilter::class:
+                /** @var DocumentStore\Filter\AnyOfDocIdFilter $filter */
+                return $this->makeInClause('id', $filter->valList(), $argsCount);
+            case DocumentStore\Filter\AnyOfFilter::class:
+                /** @var DocumentStore\Filter\AnyOfFilter $filter */
+                return $this->makeInClause($this->propToJsonPath($filter->prop()), $filter->valList(), $argsCount, true);
             case DocumentStore\Filter\EqFilter::class:
                 /** @var DocumentStore\Filter\EqFilter $filter */
                 $prop = $this->propToJsonPath($filter->prop());
@@ -430,6 +439,12 @@ EOT;
 
                 [$innerFilterStr, $args, $argsCount] = $this->filterToWhereClause($innerFilter);
 
+                if($innerFilter instanceof DocumentStore\Filter\AnyOfFilter || $innerFilter instanceof DocumentStore\Filter\AnyOfDocIdFilter) {
+                    $inPos = strpos($innerFilterStr, ' IN(');
+                    $filterStr = substr_replace($innerFilterStr, ' NOT IN(', $inPos, 4 /* " IN(" */);
+                    return [$filterStr, $args, $argsCount];
+                }
+
                 return ["NOT $innerFilterStr", $args, $argsCount];
             case DocumentStore\Filter\InArrayFilter::class:
                 /** @var DocumentStore\Filter\InArrayFilter $filter */
@@ -462,6 +477,19 @@ EOT;
             default:
                 return true;
         }
+    }
+
+    private function makeInClause(string $prop, array $valList, int $argsCount, bool $jsonEncode = false): array
+    {
+        $argList = [];
+        $params = \implode(",", \array_map(function ($val) use (&$argsCount, &$argList, $jsonEncode) {
+            $param = ":a$argsCount";
+            $argList["a$argsCount"] = $jsonEncode? \json_encode($val) : $val;
+            $argsCount++;
+            return $param;
+        }, $valList));
+
+        return ["$prop IN($params)", $argList, $argsCount];
     }
 
     private function orderByToSort(DocumentStore\OrderBy\OrderBy $orderBy): array
