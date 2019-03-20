@@ -17,19 +17,19 @@
   ],
   "require": {
     "php": "^7.1",
-    "ext-pdo": "*"
+    "ext-pdo": "*",
+    "event-engine/php-persistence": "^0.1"
   },
   "require-dev": {
-    "event-engine/php-engine": "dev-master",
+    "roave/security-advisories": "dev-master",
+    "ramsey/uuid" : "^3.6",
     "infection/infection": "^0.11.0",
     "malukenho/docheader": "^0.1.4",
     "phpspec/prophecy": "^1.7",
     "phpstan/phpstan": "^0.10.5",
     "phpstan/phpstan-strict-rules": "^0.10.1",
     "phpunit/phpunit": "^8.0",
-    "prooph/bookdown-template": "^0.2.3",
     "prooph/php-cs-fixer-config": "^0.3",
-    "roave/security-advisories": "dev-master",
     "satooshi/php-coveralls": "^1.0"
   },
   "autoload": {
@@ -47,21 +47,7 @@
     "platform": {
     }
   },
-  "minimum-stability": "dev",
   "prefer-stable": true,
-  "repositories": [
-    {
-      "type": "composer",
-      "url": "https://packagist.org"
-    },
-    {
-      "packagist": false
-    },
-    {
-      "type": "vcs",
-      "url": "https://github.com/event-engine/php-engine"
-    }
-  ],
   "scripts": {
     "test": "vendor/bin/phpunit",
     "test-coverage": "phpunit --colors=always --coverage-clover clover.xml",
