@@ -18,7 +18,7 @@
   "require": {
     "php": "^7.1",
     "ext-pdo": "*",
-    "event-engine/php-persistence": "^0.1"
+    "event-engine/php-persistence": "^0.2"
   },
   "require-dev": {
     "roave/security-advisories": "dev-master",

@@ -166,6 +166,48 @@ EOT;
         });
     }
 
+    public function hasCollectionIndex(string $collectionName, string $indexName): bool
+    {
+        $query = <<<EOT
+SELECT INDEXNAME 
+FROM pg_indexes
+WHERE TABLENAME = '{$this->tableName($collectionName)}'
+AND INDEXNAME = '$indexName'
+EOT;
+
+        $stmt = $this->connection->prepare($query);
+
+        $stmt->execute();
+
+        $row = $stmt->fetchColumn();
+
+        return !!$row;
+    }
+
+    /**
+     * @param string $collectionName
+     * @param Index $index
+     * @throws \EventEngine\DocumentStore\Exception\RuntimeException if adding did not succeed
+     */
+    public function addCollectionIndex(string $collectionName, Index $index): void
+    {
+        $cmd = $this->indexToSqlCmd($index, $collectionName);
+
+        $this->connection->prepare($cmd)->execute();
+    }
+
+    /**
+     * @param string $collectionName
+     * @param string $indexName
+     * @throws \EventEngine\DocumentStore\Exception\RuntimeException if dropping did not succeed
+     */
+    public function dropCollectionIndex(string $collectionName, string $indexName): void
+    {
+        $cmd = "DROP INDEX $indexName";
+
+        $this->connection->prepare($cmd)->execute();
+    }
+
     /**
      * @param string $collectionName
      * @param string $docId
@@ -527,8 +569,10 @@ EOT;
             throw new RuntimeException('Unsupported index type. Got ' . get_class($index));
         }
 
+        $name = $index->name() ?? '';
+
         $cmd = <<<EOT
-CREATE $type ON {$this->tableName($collectionName)}
+CREATE $type $name ON {$this->tableName($collectionName)}
 $fields;
 EOT;
 

@@ -142,6 +142,32 @@ class PostgresDocumentStoreTest extends TestCase
     /**
      * @test
      */
+    public function it_handles_named_indices(): void
+    {
+        $collectionName = 'test_named_indices';
+
+        $this->documentStore->addCollection(
+            $collectionName,
+            FieldIndex::namedIndexForField('testidx_field_a', 'a'),
+            MultiFieldIndex::namedIndexForFields('multitestidx_fields_a_b', ['a', 'b'])
+        );
+
+        $this->assertTrue($this->documentStore->hasCollectionIndex($collectionName, 'testidx_field_a'));
+
+        $this->assertTrue($this->documentStore->hasCollectionIndex($collectionName, 'multitestidx_fields_a_b'));
+
+        $this->documentStore->dropCollectionIndex($collectionName, 'testidx_field_a');
+
+        $this->assertFalse($this->documentStore->hasCollectionIndex($collectionName, 'testidx_field_a'));
+
+        $this->documentStore->addCollectionIndex($collectionName, FieldIndex::namedIndexForField('testidx_field_b', 'b'));
+
+        $this->assertTrue($this->documentStore->hasCollectionIndex($collectionName, 'testidx_field_b'));
+    }
+
+    /**
+     * @test
+     */
     public function it_handles_any_of_filter()
     {
         $collectionName = 'test_any_of_filter';
