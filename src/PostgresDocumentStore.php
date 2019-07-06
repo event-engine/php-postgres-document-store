@@ -312,7 +312,7 @@ EOT;
         }
 
         $cmd = <<<EOT
-INSERT INTO {$this->tableName($collectionName)} (id, doc$metadataKeysStr) VALUES (:id, :doc$metadataValsStr);
+INSERT INTO {$this->tableName($collectionName)} (id, doc{$metadataKeysStr}) VALUES (:id, :doc{$metadataValsStr});
 EOT;
 
         $this->transactional(function () use ($cmd, $docId, $doc, $metadata) {
@@ -346,7 +346,7 @@ EOT;
 
         $cmd = <<<EOT
 UPDATE {$this->tableName($collectionName)}
-SET doc = (to_jsonb(doc) || :doc)$metadataStr
+SET doc = (to_jsonb(doc) || :doc){$metadataStr}
 WHERE id = :id
 ;
 EOT;
@@ -385,7 +385,7 @@ EOT;
 
         $cmd = <<<EOT
 UPDATE {$this->tableName($collectionName)}
-SET doc = (to_jsonb(doc) || :doc)$metadataStr
+SET doc = (to_jsonb(doc) || :doc){$metadataStr}
 $where;
 EOT;
 
