@@ -105,6 +105,30 @@ final class TestUtil
         return $time->sub($interval);
     }
 
+    public static function getIndexes(PDO $connection, string $tableName): array
+    {
+        $stmt = $connection->prepare(
+            "select * from pg_indexes where schemaname = 'public' and tablename = :name"
+        );
+        $stmt->execute(['name' => $tableName]);
+        return $stmt->fetchAll();
+    }
+
+    public static function getColumns(PDO $connection, string $tableName): array
+    {
+        $stmt = $connection->prepare(
+            "SELECT *
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name   = :name"
+        );
+
+        $stmt->execute(['name' => $tableName]);
+        return array_map(function (array $info) {
+            return $info['column_name'];
+        }, $stmt->fetchAll());
+    }
+
     private static function hasRequiredConnectionParams(): bool
     {
         $env = getenv();
