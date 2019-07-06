@@ -307,11 +307,12 @@ class PostgresDocumentStoreTest extends TestCase
 
     private function getIndexes(string $collectionName): array
     {
-        $stmt = $this->connection->prepare(
-            "select * from pg_indexes where schemaname = 'public' and tablename = :name"
-        );
-        $stmt->execute(['name' => self::TABLE_PREFIX . $collectionName]);
-        return $stmt->fetchAll();
+        return TestUtil::getIndexes($this->connection, self::TABLE_PREFIX.$collectionName);
+    }
+
+    private function getColumns(string $collectionName): array
+    {
+        return TestUtil::getColumns($this->connection, self::TABLE_PREFIX.$collectionName);
     }
 
 }

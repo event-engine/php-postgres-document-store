@@ -17,6 +17,7 @@ use EventEngine\DocumentStore\Index;
 use EventEngine\DocumentStore\OrderBy\OrderBy;
 use EventEngine\DocumentStore\Postgres\Exception\InvalidArgumentException;
 use EventEngine\DocumentStore\Postgres\Exception\RuntimeException;
+use EventEngine\Util\VariableType;
 
 final class PostgresDocumentStore implements DocumentStore\DocumentStore
 {
@@ -31,11 +32,14 @@ final class PostgresDocumentStore implements DocumentStore\DocumentStore
 
     private $manageTransactions;
 
+    private $useMetadataColumns = false;
+
     public function __construct(
         \PDO $connection,
         string $tablePrefix = null,
         string $docIdSchema = null,
-        bool $transactional = true
+        bool $transactional = true,
+        bool $useMetadataColumns = false
     ) {
         $this->connection = $connection;
         $this->connection->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
@@ -49,6 +53,8 @@ final class PostgresDocumentStore implements DocumentStore\DocumentStore
         }
 
         $this->manageTransactions = $transactional;
+
+        $this->useMetadataColumns = $useMetadataColumns;
     }
 
     /**
@@ -130,10 +136,22 @@ EOT;
      */
     public function addCollection(string $collectionName, Index ...$indices): void
     {
+        $metadataColumns = '';
+
+        foreach ($indices as $i => $index) {
+            if($index instanceof DocumentStore\Postgres\Metadata\MetadataColumnIndex) {
+                foreach ($index->columns() as $column) {
+                    $metadataColumns .= $column->sql().', ';
+                }
+                $indices[$i] = $index->indexCmd();
+            }
+        }
+
         $cmd = <<<EOT
 CREATE TABLE {$this->tableName($collectionName)} (
     id {$this->docIdSchema},
     doc JSONB NOT NULL,
+    $metadataColumns
     PRIMARY KEY (id)
 );
 EOT;
@@ -191,21 +209,80 @@ EOT;
      */
     public function addCollectionIndex(string $collectionName, Index $index): void
     {
-        $cmd = $this->indexToSqlCmd($index, $collectionName);
+        $metadataColumnCmd = null;
 
-        $this->connection->prepare($cmd)->execute();
+        if($index instanceof DocumentStore\Postgres\Metadata\MetadataColumnIndex) {
+
+            $columnsSql = '';
+
+            foreach ($index->columns() as $column) {
+                $columnsSql .= ', ADD COLUMN ' . $column->sql();
+            }
+
+            $columnsSql = substr($columnsSql, 2);
+
+            $metadataColumnCmd = <<<EOT
+ALTER TABLE {$this->tableName($collectionName)}
+    $columnsSql;
+EOT;
+
+            $index = $index->indexCmd();
+        }
+
+        $indexCmd = $this->indexToSqlCmd($index, $collectionName);
+
+        $this->transactional(function() use ($metadataColumnCmd, $indexCmd) {
+
+            if($metadataColumnCmd) {
+                $this->connection->prepare($metadataColumnCmd)->execute();
+            }
+
+            $this->connection->prepare($indexCmd)->execute();
+        });
     }
 
     /**
      * @param string $collectionName
-     * @param string $indexName
+     * @param string|Index $index
      * @throws \EventEngine\DocumentStore\Exception\RuntimeException if dropping did not succeed
+     * @throws \Throwable
      */
-    public function dropCollectionIndex(string $collectionName, string $indexName): void
+    public function dropCollectionIndex(string $collectionName, $index): void
     {
+        $metadataColumnCmd = null;
+
+        if($index instanceof DocumentStore\Postgres\Metadata\MetadataColumnIndex) {
+
+            $columnsSql = '';
+
+            foreach ($index->columns() as $column) {
+                $columnsSql .= ', DROP COLUMN IF EXISTS ' . $this->getColumnNameFromSql($column->sql());
+            }
+
+            $columnsSql = substr($columnsSql, 2);
+
+            $metadataColumnCmd = <<<EOT
+ALTER TABLE {$this->tableName($collectionName)}
+    $columnsSql;
+EOT;
+            $index = $index->indexCmd();
+        }
+
+        $indexName = is_string($index)? $index : $this->getIndexName($index);
+
+        if($indexName === null) {
+            throw new DocumentStore\Exception\RuntimeException("Given index does not have a name: ". VariableType::determine($index));
+        }
+
         $cmd = "DROP INDEX $indexName";
 
-        $this->connection->prepare($cmd)->execute();
+        $this->transactional(function () use($cmd, $metadataColumnCmd) {
+            $this->connection->prepare($cmd)->execute();
+
+            if($metadataColumnCmd) {
+                $this->connection->prepare($metadataColumnCmd)->execute();
+            }
+        });
     }
 
     /**
@@ -216,14 +293,33 @@ EOT;
      */
     public function addDoc(string $collectionName, string $docId, array $doc): void
     {
+        $metadataKeysStr = '';
+        $metadataValsStr = '';
+        $metadata = [];
+
+        if($this->useMetadataColumns && array_key_exists('metadata', $doc)) {
+            $metadata = $doc['metadata'];
+            unset($doc['metadata']);
+
+            if(!is_array($metadata)) {
+                throw new RuntimeException("metadata should be of type array");
+            }
+
+            foreach ($metadata as $k => $v) {
+                $metadataKeysStr .= ', '.$k;
+                $metadataValsStr .= ', :'.$k;
+            }
+        }
+
         $cmd = <<<EOT
-INSERT INTO {$this->tableName($collectionName)} (id, doc) VALUES (:id, :doc);
+INSERT INTO {$this->tableName($collectionName)} (id, doc{$metadataKeysStr}) VALUES (:id, :doc{$metadataValsStr});
 EOT;
-        $this->transactional(function () use ($cmd, $docId, $doc) {
-            $this->connection->prepare($cmd)->execute([
+
+        $this->transactional(function () use ($cmd, $docId, $doc, $metadata) {
+            $this->connection->prepare($cmd)->execute(array_merge([
                 'id' => $docId,
                 'doc' => json_encode($doc)
-            ]);
+            ], $metadata));
         });
     }
 
@@ -235,17 +331,30 @@ EOT;
      */
     public function updateDoc(string $collectionName, string $docId, array $docOrSubset): void
     {
+        $metadataStr = '';
+        $metadata = [];
+
+        if($this->useMetadataColumns && array_key_exists('metadata', $docOrSubset)) {
+            $metadata = $docOrSubset['metadata'];
+            unset($docOrSubset['metadata']);
+
+
+            foreach ($metadata as $k => $v) {
+                $metadataStr .= ', '.$k.' = :'.$k;
+            }
+        }
+
         $cmd = <<<EOT
 UPDATE {$this->tableName($collectionName)}
-SET doc = (to_jsonb(doc) || :doc)
+SET doc = (to_jsonb(doc) || :doc){$metadataStr}
 WHERE id = :id
 ;
 EOT;
-        $this->transactional(function () use ($cmd, $docId, $docOrSubset) {
-            $this->connection->prepare($cmd)->execute([
+        $this->transactional(function () use ($cmd, $docId, $docOrSubset, $metadata) {
+            $this->connection->prepare($cmd)->execute(array_merge([
                 'id' => $docId,
                 'doc' => json_encode($docOrSubset)
-            ]);
+            ], $metadata));
         });
     }
 
@@ -261,13 +370,27 @@ EOT;
 
         $where = $filterStr? "WHERE $filterStr" : '';
 
+        $metadataStr = '';
+        $metadata = [];
+
+        if($this->useMetadataColumns && array_key_exists('metadata', $set)) {
+            $metadata = $set['metadata'];
+            unset($set['metadata']);
+
+
+            foreach ($metadata as $k => $v) {
+                $metadataStr .= ', '.$k.' = :'.$k;
+            }
+        }
+
         $cmd = <<<EOT
 UPDATE {$this->tableName($collectionName)}
-SET doc = (to_jsonb(doc) || :doc)
+SET doc = (to_jsonb(doc) || :doc){$metadataStr}
 $where;
 EOT;
 
         $args['doc'] = json_encode($set);
+        $args = array_merge($args, $metadata);
 
         $this->transactional(function () use ($cmd, $args) {
             $this->connection->prepare($cmd)->execute($args);
@@ -506,6 +629,10 @@ EOT;
 
     private function propToJsonPath(string $field): string
     {
+        if($this->useMetadataColumns && strpos($field, 'metadata.') === 0) {
+            return str_replace('metadata.', '', $field);
+        }
+
         return "doc->'" . str_replace('.', "'->'", $field) . "'";
     }
 
@@ -565,6 +692,8 @@ EOT;
             $type = $index->unique() ? 'UNIQUE INDEX' : 'INDEX';
             $fieldParts = array_map([$this, 'extractFieldPartFromFieldIndex'], $index->fields());
             $fields = '('.implode(', ', $fieldParts).')';
+        } elseif ($index instanceof DocumentStore\Postgres\Index\RawSqlIndexCmd) {
+            return $index->sql();
         } else {
             throw new RuntimeException('Unsupported index type. Got ' . get_class($index));
         }
@@ -577,6 +706,22 @@ $fields;
 EOT;
 
         return $cmd;
+    }
+
+    private function getIndexName(Index $index): ?string
+    {
+        if(method_exists($index, 'name')) {
+            return $index->name();
+        }
+
+        return null;
+    }
+
+    private function getColumnNameFromSql(string $columnSql): string
+    {
+        $parts = explode(' ', $columnSql);
+
+        return $parts[0];
     }
 
     private function extractFieldPartFromFieldIndex(DocumentStore\FieldIndex $fieldIndex): string
