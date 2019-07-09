@@ -566,27 +566,27 @@ EOT;
                 return $this->makeInClause('id', $filter->valList(), $argsCount);
             case DocumentStore\Filter\AnyOfFilter::class:
                 /** @var DocumentStore\Filter\AnyOfFilter $filter */
-                return $this->makeInClause($this->propToJsonPath($filter->prop()), $filter->valList(), $argsCount, true);
+                return $this->makeInClause($this->propToJsonPath($filter->prop()), $filter->valList(), $argsCount, $this->shouldJsonEncodeVal($filter->prop()));
             case DocumentStore\Filter\EqFilter::class:
                 /** @var DocumentStore\Filter\EqFilter $filter */
                 $prop = $this->propToJsonPath($filter->prop());
-                return ["$prop = :a$argsCount", ["a$argsCount" => json_encode($filter->val())], ++$argsCount];
+                return ["$prop = :a$argsCount", ["a$argsCount" => $this->prepareVal($filter->val(), $filter->prop())], ++$argsCount];
             case DocumentStore\Filter\GtFilter::class:
                 /** @var DocumentStore\Filter\GtFilter $filter */
                 $prop = $this->propToJsonPath($filter->prop());
-                return ["$prop > :a$argsCount", ["a$argsCount" => json_encode($filter->val())], ++$argsCount];
+                return ["$prop > :a$argsCount", ["a$argsCount" => $this->prepareVal($filter->val(), $filter->prop())], ++$argsCount];
             case DocumentStore\Filter\GteFilter::class:
                 /** @var DocumentStore\Filter\GteFilter $filter */
                 $prop = $this->propToJsonPath($filter->prop());
-                return ["$prop >= :a$argsCount", ["a$argsCount" => json_encode($filter->val())], ++$argsCount];
+                return ["$prop >= :a$argsCount", ["a$argsCount" => $this->prepareVal($filter->val(), $filter->prop())], ++$argsCount];
             case DocumentStore\Filter\LtFilter::class:
                 /** @var DocumentStore\Filter\LtFilter $filter */
                 $prop = $this->propToJsonPath($filter->prop());
-                return ["$prop < :a$argsCount", ["a$argsCount" => json_encode($filter->val())], ++$argsCount];
+                return ["$prop < :a$argsCount", ["a$argsCount" => $this->prepareVal($filter->val(), $filter->prop())], ++$argsCount];
             case DocumentStore\Filter\LteFilter::class:
                 /** @var DocumentStore\Filter\LteFilter $filter */
                 $prop = $this->propToJsonPath($filter->prop());
-                return ["$prop <= :a$argsCount", ["a$argsCount" => json_encode($filter->val())], ++$argsCount];
+                return ["$prop <= :a$argsCount", ["a$argsCount" => $this->prepareVal($filter->val(), $filter->prop())], ++$argsCount];
             case DocumentStore\Filter\LikeFilter::class:
                 /** @var DocumentStore\Filter\LikeFilter $filter */
                 $prop = $this->propToJsonPath($filter->prop());
@@ -614,7 +614,7 @@ EOT;
             case DocumentStore\Filter\InArrayFilter::class:
                 /** @var DocumentStore\Filter\InArrayFilter $filter */
                 $prop = $this->propToJsonPath($filter->prop());
-                return ["$prop @> :a$argsCount", ["a$argsCount" => json_encode($filter->val())], ++$argsCount];
+                return ["$prop @> :a$argsCount", ["a$argsCount" => $this->prepareVal($filter->val(), $filter->prop())], ++$argsCount];
             case DocumentStore\Filter\ExistsFilter::class:
                 /** @var DocumentStore\Filter\ExistsFilter $filter */
                 $prop = $this->propToJsonPath($filter->prop());
@@ -706,6 +706,24 @@ $fields;
 EOT;
 
         return $cmd;
+    }
+
+    private function prepareVal($value, string $prop)
+    {
+        if(!$this->shouldJsonEncodeVal($prop)) {
+            return $value;
+        }
+
+        return \json_encode($value);
+    }
+
+    private function shouldJsonEncodeVal(string $prop): bool
+    {
+        if($this->useMetadataColumns && strpos($prop, 'metadata.') === 0) {
+            return false;
+        }
+
+        return true;
     }
 
     private function getIndexName(Index $index): ?string
