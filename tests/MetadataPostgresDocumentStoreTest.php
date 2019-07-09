@@ -315,6 +315,52 @@ final class MetadataPostgresDocumentStoreTest extends TestCase
         $this->assertEquals('v4', $docs[0]['state']['name']);
     }
 
+    /**
+     * @test
+     */
+    public function it_fills_and_queries_metadata_varchar_column()
+    {
+        $collectionName = 'test_col_query_name_meta';
+
+        $index1 = new MetadataColumnIndex(
+            FieldIndex::namedIndexForField('meta_field_idx_name', 'metadata.name'),
+            new Column('name VARCHAR(10)')
+        );
+
+        $this->documentStore->addCollection($collectionName, $index1);
+
+        $docId1 = Uuid::uuid4()->toString();
+        $docId2 = Uuid::uuid4()->toString();
+        $docId3 = Uuid::uuid4()->toString();
+
+        $this->documentStore->addDoc($collectionName, $docId1, ['state' => ['name' => 'v1'], 'metadata' => ['name' => 'v1']]);
+        $this->documentStore->addDoc($collectionName, $docId2, ['state' => ['name' => 'v2'], 'metadata' => ['name' => 'v2']]);
+        $this->documentStore->addDoc($collectionName, $docId3, ['state' => ['name' => 'v3'], 'metadata' => ['name' => 'v3']]);
+
+        $prefix = self::TABLE_PREFIX;
+        $stmt = "SELECT * FROM $prefix{$collectionName} WHERE name = 'v2';";
+        $stmt = $this->connection->prepare($stmt);
+        $stmt->execute();
+        $docs = $stmt->fetchAll();
+
+        $this->assertCount(1, $docs);
+        $this->assertEquals($docId2, $docs[0]['id']);
+        $this->assertEquals(['state' => ['name' => 'v2']], json_decode($docs[0]['doc'], true));
+        $this->assertEquals('v2', $docs[0]['name']);
+
+        $docs = iterator_to_array($this->documentStore->filterDocs(
+            $collectionName,
+            new GteFilter('metadata.name', 'v2'),
+            null,
+            null,
+            Desc::byProp('metadata.name')
+        ));
+
+        $this->assertCount(2, $docs);
+        $this->assertEquals('v3', $docs[0]['state']['name']);
+        $this->assertEquals('v2', $docs[1]['state']['name']);
+    }
+
     private function getIndexes(string $collectionName): array
     {
         return TestUtil::getIndexes($this->connection, self::TABLE_PREFIX.$collectionName);
