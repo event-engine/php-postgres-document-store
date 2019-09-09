@@ -119,6 +119,7 @@ EOT;
 SELECT TABLE_NAME 
 FROM information_schema.tables
 WHERE TABLE_NAME = '{$this->tableName($collectionName)}'
+AND TABLE_SCHEMA = '{$this->schemaName($collectionName)}'
 EOT;
 
         $stmt = $this->connection->prepare($query);
@@ -148,7 +149,7 @@ EOT;
         }
 
         $cmd = <<<EOT
-CREATE TABLE {$this->tableName($collectionName)} (
+CREATE TABLE {$this->schemaName($collectionName)}.{$this->tableName($collectionName)} (
     id {$this->docIdSchema},
     doc JSONB NOT NULL,
     $metadataColumns
@@ -751,6 +752,19 @@ EOT;
 
     private function tableName(string $collectionName): string
     {
+        if (false !== $dotPosition = strpos($collectionName, '.')) {
+            $collectionName = substr($collectionName, $dotPosition+1);
+        }
+
         return mb_strtolower($this->tablePrefix . $collectionName);
     }
+
+     private function schemaName(string $collectionName): string
+     {
+         $schemaName = 'public';
+         if (false !== $dotPosition = strpos($collectionName, '.')) {
+             $schemaName = substr($collectionName, 0, $dotPosition);
+         }
+         return mb_strtolower($schemaName);
+     }
 }
