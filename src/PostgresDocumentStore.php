@@ -148,6 +148,8 @@ EOT;
             }
         }
 
+        $createSchemaCmd = "CREATE SCHEMA IF NOT EXISTS {$this->schemaName($collectionName)}";
+
         $cmd = <<<EOT
 CREATE TABLE {$this->schemaName($collectionName)}.{$this->tableName($collectionName)} (
     id {$this->docIdSchema},
@@ -161,7 +163,8 @@ EOT;
             return $this->indexToSqlCmd($index, $collectionName);
         }, $indices);
 
-        $this->transactional(function() use ($cmd, $indicesCmds) {
+        $this->transactional(function() use ($createSchemaCmd, $cmd, $indicesCmds) {
+            $this->connection->prepare($createSchemaCmd)->execute();
             $this->connection->prepare($cmd)->execute();
 
             array_walk($indicesCmds, function ($cmd) {
