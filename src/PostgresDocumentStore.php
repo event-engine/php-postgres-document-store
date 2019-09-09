@@ -119,6 +119,7 @@ EOT;
 SELECT TABLE_NAME 
 FROM information_schema.tables
 WHERE TABLE_NAME = '{$this->tableName($collectionName)}'
+AND TABLE_SCHEMA = '{$this->schemaName($collectionName)}'
 EOT;
 
         $stmt = $this->connection->prepare($query);
@@ -147,8 +148,10 @@ EOT;
             }
         }
 
+        $createSchemaCmd = "CREATE SCHEMA IF NOT EXISTS {$this->schemaName($collectionName)}";
+
         $cmd = <<<EOT
-CREATE TABLE {$this->tableName($collectionName)} (
+CREATE TABLE {$this->schemaName($collectionName)}.{$this->tableName($collectionName)} (
     id {$this->docIdSchema},
     doc JSONB NOT NULL,
     $metadataColumns
@@ -160,7 +163,8 @@ EOT;
             return $this->indexToSqlCmd($index, $collectionName);
         }, $indices);
 
-        $this->transactional(function() use ($cmd, $indicesCmds) {
+        $this->transactional(function() use ($createSchemaCmd, $cmd, $indicesCmds) {
+            $this->connection->prepare($createSchemaCmd)->execute();
             $this->connection->prepare($cmd)->execute();
 
             array_walk($indicesCmds, function ($cmd) {
@@ -176,7 +180,7 @@ EOT;
     public function dropCollection(string $collectionName): void
     {
         $cmd = <<<EOT
-DROP TABLE {$this->tableName($collectionName)};
+DROP TABLE {$this->schemaName($collectionName)}.{$this->tableName($collectionName)};
 EOT;
 
         $this->transactional(function () use ($cmd) {
@@ -190,6 +194,7 @@ EOT;
 SELECT INDEXNAME 
 FROM pg_indexes
 WHERE TABLENAME = '{$this->tableName($collectionName)}'
+AND SCHEMANAME = '{$this->schemaName($collectionName)}'
 AND INDEXNAME = '$indexName'
 EOT;
 
@@ -222,7 +227,7 @@ EOT;
             $columnsSql = substr($columnsSql, 2);
 
             $metadataColumnCmd = <<<EOT
-ALTER TABLE {$this->tableName($collectionName)}
+ALTER TABLE {$this->schemaName($collectionName)}.{$this->tableName($collectionName)}
     $columnsSql;
 EOT;
 
@@ -262,7 +267,7 @@ EOT;
             $columnsSql = substr($columnsSql, 2);
 
             $metadataColumnCmd = <<<EOT
-ALTER TABLE {$this->tableName($collectionName)}
+ALTER TABLE {$this->schemaName($collectionName)}.{$this->tableName($collectionName)}
     $columnsSql;
 EOT;
             $index = $index->indexCmd();
@@ -312,7 +317,9 @@ EOT;
         }
 
         $cmd = <<<EOT
-INSERT INTO {$this->tableName($collectionName)} (id, doc{$metadataKeysStr}) VALUES (:id, :doc{$metadataValsStr});
+INSERT INTO {$this->schemaName($collectionName)}.{$this->tableName($collectionName)} (
+    id, doc{$metadataKeysStr}) VALUES (:id, :doc{$metadataValsStr}
+);
 EOT;
 
         $this->transactional(function () use ($cmd, $docId, $doc, $metadata) {
@@ -345,7 +352,7 @@ EOT;
         }
 
         $cmd = <<<EOT
-UPDATE {$this->tableName($collectionName)}
+UPDATE {$this->schemaName($collectionName)}.{$this->tableName($collectionName)}
 SET doc = (to_jsonb(doc) || :doc){$metadataStr}
 WHERE id = :id
 ;
@@ -384,7 +391,7 @@ EOT;
         }
 
         $cmd = <<<EOT
-UPDATE {$this->tableName($collectionName)}
+UPDATE {$this->schemaName($collectionName)}.{$this->tableName($collectionName)}
 SET doc = (to_jsonb(doc) || :doc){$metadataStr}
 $where;
 EOT;
@@ -424,7 +431,7 @@ EOT;
     public function deleteDoc(string $collectionName, string $docId): void
     {
         $cmd = <<<EOT
-DELETE FROM {$this->tableName($collectionName)}
+DELETE FROM {$this->schemaName($collectionName)}.{$this->tableName($collectionName)}
 WHERE id = :id
 EOT;
 
@@ -447,7 +454,7 @@ EOT;
         $where = $filterStr? "WHERE $filterStr" : '';
 
         $cmd = <<<EOT
-DELETE FROM {$this->tableName($collectionName)}
+DELETE FROM {$this->schemaName($collectionName)}.{$this->tableName($collectionName)}
 $where;
 EOT;
 
@@ -465,7 +472,7 @@ EOT;
     {
         $query = <<<EOT
 SELECT doc
-FROM {$this->tableName($collectionName)}
+FROM {$this->schemaName($collectionName)}.{$this->tableName($collectionName)}
 WHERE id = :id
 EOT;
         $stmt = $this->connection->prepare($query);
@@ -502,7 +509,7 @@ EOT;
 
         $query = <<<EOT
 SELECT doc 
-FROM {$this->tableName($collectionName)}
+FROM {$this->schemaName($collectionName)}.{$this->tableName($collectionName)}
 $where
 $orderBy
 $limit
@@ -701,7 +708,7 @@ EOT;
         $name = $index->name() ?? '';
 
         $cmd = <<<EOT
-CREATE $type $name ON {$this->tableName($collectionName)}
+CREATE $type $name ON {$this->schemaName($collectionName)}.{$this->tableName($collectionName)}
 $fields;
 EOT;
 
@@ -751,6 +758,19 @@ EOT;
 
     private function tableName(string $collectionName): string
     {
+        if (false !== $dotPosition = strpos($collectionName, '.')) {
+            $collectionName = substr($collectionName, $dotPosition+1);
+        }
+
         return mb_strtolower($this->tablePrefix . $collectionName);
     }
+
+     private function schemaName(string $collectionName): string
+     {
+         $schemaName = 'public';
+         if (false !== $dotPosition = strpos($collectionName, '.')) {
+             $schemaName = substr($collectionName, 0, $dotPosition);
+         }
+         return mb_strtolower($schemaName);
+     }
 }
