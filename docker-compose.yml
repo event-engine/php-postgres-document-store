@@ -7,13 +7,13 @@ services:
       - .:/app
     environment:
       - PROOPH_ENV=dev
-      - PDO_DSN=pgsql:host=postgres port=5433 dbname=event_engine
+      - PDO_DSN=pgsql:host=postgres port=5432 dbname=event_engine
       - PDO_USER=postgres
       - PDO_PWD=
 
   postgres:
     image: postgres:alpine
     ports:
-      - 5433:5432
+      - 5432:5432
     environment:
       - POSTGRES_DB=event_engine
