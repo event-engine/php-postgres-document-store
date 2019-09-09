@@ -177,7 +177,7 @@ EOT;
     public function dropCollection(string $collectionName): void
     {
         $cmd = <<<EOT
-DROP TABLE {$this->tableName($collectionName)};
+DROP TABLE {$this->schemaName($collectionName)}.{$this->tableName($collectionName)};
 EOT;
 
         $this->transactional(function () use ($cmd) {
@@ -191,6 +191,7 @@ EOT;
 SELECT INDEXNAME 
 FROM pg_indexes
 WHERE TABLENAME = '{$this->tableName($collectionName)}'
+AND SCHEMANAME = '{$this->schemaName($collectionName)}'
 AND INDEXNAME = '$indexName'
 EOT;
 
@@ -223,7 +224,7 @@ EOT;
             $columnsSql = substr($columnsSql, 2);
 
             $metadataColumnCmd = <<<EOT
-ALTER TABLE {$this->tableName($collectionName)}
+ALTER TABLE {$this->schemaName($collectionName)}.{$this->tableName($collectionName)}
     $columnsSql;
 EOT;
 
@@ -263,7 +264,7 @@ EOT;
             $columnsSql = substr($columnsSql, 2);
 
             $metadataColumnCmd = <<<EOT
-ALTER TABLE {$this->tableName($collectionName)}
+ALTER TABLE {$this->schemaName($collectionName)}.{$this->tableName($collectionName)}
     $columnsSql;
 EOT;
             $index = $index->indexCmd();
@@ -313,7 +314,9 @@ EOT;
         }
 
         $cmd = <<<EOT
-INSERT INTO {$this->tableName($collectionName)} (id, doc{$metadataKeysStr}) VALUES (:id, :doc{$metadataValsStr});
+INSERT INTO {$this->schemaName($collectionName)}.{$this->tableName($collectionName)} (
+    id, doc{$metadataKeysStr}) VALUES (:id, :doc{$metadataValsStr}
+);
 EOT;
 
         $this->transactional(function () use ($cmd, $docId, $doc, $metadata) {
@@ -346,7 +349,7 @@ EOT;
         }
 
         $cmd = <<<EOT
-UPDATE {$this->tableName($collectionName)}
+UPDATE {$this->schemaName($collectionName)}.{$this->tableName($collectionName)}
 SET doc = (to_jsonb(doc) || :doc){$metadataStr}
 WHERE id = :id
 ;
@@ -385,7 +388,7 @@ EOT;
         }
 
         $cmd = <<<EOT
-UPDATE {$this->tableName($collectionName)}
+UPDATE {$this->schemaName($collectionName)}.{$this->tableName($collectionName)}
 SET doc = (to_jsonb(doc) || :doc){$metadataStr}
 $where;
 EOT;
@@ -425,7 +428,7 @@ EOT;
     public function deleteDoc(string $collectionName, string $docId): void
     {
         $cmd = <<<EOT
-DELETE FROM {$this->tableName($collectionName)}
+DELETE FROM {$this->schemaName($collectionName)}.{$this->tableName($collectionName)}
 WHERE id = :id
 EOT;
 
@@ -448,7 +451,7 @@ EOT;
         $where = $filterStr? "WHERE $filterStr" : '';
 
         $cmd = <<<EOT
-DELETE FROM {$this->tableName($collectionName)}
+DELETE FROM {$this->schemaName($collectionName)}.{$this->tableName($collectionName)}
 $where;
 EOT;
 
@@ -466,7 +469,7 @@ EOT;
     {
         $query = <<<EOT
 SELECT doc
-FROM {$this->tableName($collectionName)}
+FROM {$this->schemaName($collectionName)}.{$this->tableName($collectionName)}
 WHERE id = :id
 EOT;
         $stmt = $this->connection->prepare($query);
@@ -503,7 +506,7 @@ EOT;
 
         $query = <<<EOT
 SELECT doc 
-FROM {$this->tableName($collectionName)}
+FROM {$this->schemaName($collectionName)}.{$this->tableName($collectionName)}
 $where
 $orderBy
 $limit
@@ -702,7 +705,7 @@ EOT;
         $name = $index->name() ?? '';
 
         $cmd = <<<EOT
-CREATE $type $name ON {$this->tableName($collectionName)}
+CREATE $type $name ON {$this->schemaName($collectionName)}.{$this->tableName($collectionName)}
 $fields;
 EOT;
 
