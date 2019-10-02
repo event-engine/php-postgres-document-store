@@ -43,7 +43,7 @@ class SchemedPostgresDocumentStoreTest extends TestCase
         $this->documentStore = new PostgresDocumentStore($this->connection, self::TABLE_PREFIX);
     }
 
-    public function tearDown(): void
+    protected function tearDown(): void
     {
         TestUtil::tearDownDatabase();
     }

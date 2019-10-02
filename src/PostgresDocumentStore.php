@@ -621,7 +621,7 @@ EOT;
             case DocumentStore\Filter\InArrayFilter::class:
                 /** @var DocumentStore\Filter\InArrayFilter $filter */
                 $prop = $this->propToJsonPath($filter->prop());
-                return ["$prop @> :a$argsCount", ["a$argsCount" => $this->prepareVal($filter->val(), $filter->prop())], ++$argsCount];
+                return ["$prop @> :a$argsCount", ["a$argsCount" => '[' . $this->prepareVal($filter->val(), $filter->prop()) . ']'], ++$argsCount];
             case DocumentStore\Filter\ExistsFilter::class:
                 /** @var DocumentStore\Filter\ExistsFilter $filter */
                 $prop = $this->propToJsonPath($filter->prop());
