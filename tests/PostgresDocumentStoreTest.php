@@ -14,6 +14,7 @@ namespace EventEngine\DocumentStoreTest\Postgres;
 use EventEngine\DocumentStore\Filter\AnyOfDocIdFilter;
 use EventEngine\DocumentStore\Filter\AnyOfFilter;
 use EventEngine\DocumentStore\Filter\DocIdFilter;
+use EventEngine\DocumentStore\Filter\InArrayFilter;
 use EventEngine\DocumentStore\Filter\NotFilter;
 use PHPUnit\Framework\TestCase;
 use EventEngine\DocumentStore\FieldIndex;
@@ -303,6 +304,96 @@ class PostgresDocumentStoreTest extends TestCase
         }, $filteredDocs);
 
         $this->assertEquals(['bat'], $vals);
+    }
+
+    /**
+     * @test
+     */
+    public function it_handles_in_array_filter()
+    {
+        $collectionName = 'test_in_array_filter';
+        $this->documentStore->addCollection($collectionName);
+
+        $firstDocId = Uuid::uuid4()->toString();
+        $secondDocId = Uuid::uuid4()->toString();
+        $thirdDocId = Uuid::uuid4()->toString();
+
+        $this->documentStore->addDoc($collectionName, $firstDocId, ['foo' => ['bar' => ['tag1', 'tag2'], 'ref' => $firstDocId]]);
+        $this->documentStore->addDoc($collectionName, $secondDocId, ['foo' => ['bar' => ['tag2', 'tag3'], 'ref' => $secondDocId]]);
+        $this->documentStore->addDoc($collectionName, $thirdDocId, ['foo' => ['bar' => ['tag3', 'tag4'], 'ref' => $thirdDocId]]);
+
+        $filteredDocs = \iterator_to_array($this->documentStore->filterDocs(
+            $collectionName,
+            new InArrayFilter('foo.bar', 'tag3')
+        ));
+
+        $this->assertCount(2, $filteredDocs);
+
+        $refs = array_map(function (array $doc) {
+            return $doc['foo']['ref'];
+        }, $filteredDocs);
+
+        $this->assertEquals([$secondDocId, $thirdDocId], $refs);
+    }
+
+    /**
+     * @test
+     */
+    public function it_handles_not_in_array_filter()
+    {
+        $collectionName = 'test_not_in_array_filter';
+        $this->documentStore->addCollection($collectionName);
+
+        $firstDocId = Uuid::uuid4()->toString();
+        $secondDocId = Uuid::uuid4()->toString();
+        $thirdDocId = Uuid::uuid4()->toString();
+
+        $this->documentStore->addDoc($collectionName, $firstDocId, ['foo' => ['bar' => ['tag1', 'tag2'], 'ref' => $firstDocId]]);
+        $this->documentStore->addDoc($collectionName, $secondDocId, ['foo' => ['bar' => ['tag2', 'tag3'], 'ref' => $secondDocId]]);
+        $this->documentStore->addDoc($collectionName, $thirdDocId, ['foo' => ['bar' => ['tag3', 'tag4'], 'ref' => $thirdDocId]]);
+
+        $filteredDocs = \iterator_to_array($this->documentStore->filterDocs(
+            $collectionName,
+            new NotFilter(new InArrayFilter('foo.bar', 'tag3'))
+        ));
+
+        $this->assertCount(1, $filteredDocs);
+
+        $refs = array_map(function (array $doc) {
+            return $doc['foo']['ref'];
+        }, $filteredDocs);
+
+        $this->assertEquals([$firstDocId], $refs);
+    }
+
+    /**
+     * @test
+     */
+    public function it_handles_in_array_filter_with_object_items()
+    {
+        $collectionName = 'test_in_array_with_object_filter';
+        $this->documentStore->addCollection($collectionName);
+
+        $firstDocId = Uuid::uuid4()->toString();
+        $secondDocId = Uuid::uuid4()->toString();
+        $thirdDocId = Uuid::uuid4()->toString();
+
+        $this->documentStore->addDoc($collectionName, $firstDocId, ['foo' => ['bar' => [['tag' => 'tag1', 'other' => 'data'], ['tag' => 'tag2']], 'ref' => $firstDocId]]);
+        $this->documentStore->addDoc($collectionName, $secondDocId, ['foo' => ['bar' => [['tag' => 'tag2', 'other' => 'data'], ['tag' => 'tag3']], 'ref' => $secondDocId]]);
+        $this->documentStore->addDoc($collectionName, $thirdDocId, ['foo' => ['bar' => [['tag' => 'tag3', 'other' => 'data'], ['tag' => 'tag4']], 'ref' => $thirdDocId]]);
+
+        $filteredDocs = \iterator_to_array($this->documentStore->filterDocs(
+            $collectionName,
+            new InArrayFilter('foo.bar', ['tag' => 'tag3'])
+        ));
+
+        $this->assertCount(2, $filteredDocs);
+
+        $refs = array_map(function (array $doc) {
+            return $doc['foo']['ref'];
+        }, $filteredDocs);
+
+        $this->assertEquals([$secondDocId, $thirdDocId], $refs);
     }
 
     private function getIndexes(string $collectionName): array

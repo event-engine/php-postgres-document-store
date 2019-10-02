@@ -86,6 +86,7 @@ final class TestUtil
         $connection = self::getConnection();
         $statement = $connection->prepare('SELECT table_name FROM information_schema.tables WHERE table_schema = \'public\';');
         $connection->exec('DROP SCHEMA IF EXISTS prooph CASCADE');
+        $connection->exec('DROP SCHEMA IF EXISTS test CASCADE');
 
         $statement->execute();
         $tables = $statement->fetchAll(PDO::FETCH_COLUMN);
