@@ -609,7 +609,7 @@ EOT;
                     throw new RuntimeException('Not filter cannot be combined with a non prop filter!');
                 }
 
-                [$innerFilterStr, $args, $argsCount] = $this->filterToWhereClause($innerFilter);
+                [$innerFilterStr, $args, $argsCount] = $this->filterToWhereClause($innerFilter, $argsCount);
 
                 if($innerFilter instanceof DocumentStore\Filter\AnyOfFilter || $innerFilter instanceof DocumentStore\Filter\AnyOfDocIdFilter) {
                     $inPos = strpos($innerFilterStr, ' IN(');
