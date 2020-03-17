@@ -500,7 +500,7 @@ EOT;
     {
         [$filterStr, $args] = $this->filterToWhereClause($filter);
 
-        $where = $filterStr? "WHERE $filterStr" : '';
+        $where = $filterStr ? "WHERE $filterStr" : '';
 
         $offset = $skip !== null ? "OFFSET $skip" : '';
         $limit = $limit !== null ? "LIMIT $limit" : '';
@@ -522,6 +522,29 @@ EOT;
         while($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
             yield json_decode($row['doc'], true);
         }
+    }
+
+    /**
+     * @param string $collectionName
+     * @param Filter $filter
+     * @return array
+     */
+    public function filterDocIds(string $collectionName, Filter $filter): array
+    {
+        [$filterStr, $args] = $this->filterToWhereClause($filter);
+
+        $where = $filterStr ? "WHERE {$filterStr}" : '';
+        $query = "SELECT id FROM {$this->schemaName($collectionName)}.{$this->tableName($collectionName)} {$where}";
+
+        $stmt = $this->connection->prepare($query);
+        $stmt->execute($args);
+
+        $docIds = [];
+        while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+            $docIds[] = $row['id'];
+        }
+
+        return $docIds;
     }
 
     private function transactional(callable $callback)

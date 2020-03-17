@@ -16,8 +16,11 @@ use EventEngine\DocumentStore\Filter\AnyOfDocIdFilter;
 use EventEngine\DocumentStore\Filter\AnyOfFilter;
 use EventEngine\DocumentStore\Filter\DocIdFilter;
 use EventEngine\DocumentStore\Filter\EqFilter;
+use EventEngine\DocumentStore\Filter\GtFilter;
 use EventEngine\DocumentStore\Filter\InArrayFilter;
+use EventEngine\DocumentStore\Filter\LtFilter;
 use EventEngine\DocumentStore\Filter\NotFilter;
+use EventEngine\DocumentStore\Filter\OrFilter;
 use PHPUnit\Framework\TestCase;
 use EventEngine\DocumentStore\FieldIndex;
 use EventEngine\DocumentStore\Index;
@@ -432,6 +435,30 @@ class PostgresDocumentStoreTest extends TestCase
         }, $filteredDocs);
 
         $this->assertEquals([$thirdDocId], $refs);
+    }
+
+    /**
+     * @test
+     */
+    public function it_retrieves_doc_ids_by_filter()
+    {
+        $collectionName = 'test_not_filter_nested_in_and_filter';
+        $this->documentStore->addCollection($collectionName);
+
+        $firstDocId = Uuid::uuid4()->toString();
+        $secondDocId = Uuid::uuid4()->toString();
+        $thirdDocId = Uuid::uuid4()->toString();
+
+        $this->documentStore->addDoc($collectionName, $firstDocId, ['number' => 10]);
+        $this->documentStore->addDoc($collectionName, $secondDocId, ['number' => 20]);
+        $this->documentStore->addDoc($collectionName, $thirdDocId, ['number' => 30]);
+
+        $result = $this->documentStore->filterDocIds($collectionName, new OrFilter(
+            new GtFilter('number', 21),
+            new LtFilter('number', 19)
+        ));
+
+        $this->assertEquals([$firstDocId, $thirdDocId], $result);
     }
 
     private function getIndexes(string $collectionName): array
