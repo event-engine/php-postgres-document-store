@@ -524,6 +524,29 @@ EOT;
         }
     }
 
+    /**
+     * @param string $collectionName
+     * @param Filter $filter
+     * @return int number of docs
+     */
+    public function countDocs(string $collectionName, Filter $filter): int
+    {
+        [$filterStr, $args] = $this->filterToWhereClause($filter);
+
+        $where = $filterStr? "WHERE $filterStr" : '';
+
+        $query = <<<EOT
+SELECT count(doc) 
+FROM {$this->schemaName($collectionName)}.{$this->tableName($collectionName)}
+$where;
+EOT;
+        $stmt = $this->connection->prepare($query);
+
+        $stmt->execute($args);
+
+        return (int) $stmt->fetchColumn(0);
+    }
+
     private function transactional(callable $callback)
     {
         if($this->manageTransactions) {
