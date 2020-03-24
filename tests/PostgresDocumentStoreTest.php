@@ -434,6 +434,32 @@ class PostgresDocumentStoreTest extends TestCase
         $this->assertEquals([$thirdDocId], $refs);
     }
 
+    /**
+     * @test
+     */
+    public function it_counts_any_of_filter()
+    {
+        $collectionName = 'test_any_of_filter';
+        $this->documentStore->addCollection($collectionName);
+
+        $doc1 = ["foo" => "bar"];
+        $doc2 = ["foo" => "baz"];
+        $doc3 = ["foo" => "bat"];
+
+        $docs = [$doc1, $doc2, $doc3];
+
+        array_walk($docs, function (array $doc) use ($collectionName) {
+            $this->documentStore->addDoc($collectionName, Uuid::uuid4()->toString(), $doc);
+        });
+
+        $count = $this->documentStore->countDocs(
+            $collectionName,
+            new AnyOfFilter("foo", ["bar", "bat"])
+        );
+
+        $this->assertSame(2, $count);
+    }
+
     private function getIndexes(string $collectionName): array
     {
         return TestUtil::getIndexes($this->connection, self::TABLE_PREFIX.$collectionName);
