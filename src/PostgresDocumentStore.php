@@ -713,7 +713,7 @@ EOT;
                 $propParts = explode('->', $prop);
                 $lastProp = array_pop($propParts);
                 $prop = implode('->', $propParts) . '->>'.$lastProp;
-                return ["$prop LIKE :a$argsCount", ["a$argsCount" => $filter->val()], ++$argsCount];
+                return ["$prop iLIKE :a$argsCount", ["a$argsCount" => $filter->val()], ++$argsCount];
             case DocumentStore\Filter\NotFilter::class:
                 /** @var DocumentStore\Filter\NotFilter $filter */
                 $innerFilter = $filter->innerFilter();
