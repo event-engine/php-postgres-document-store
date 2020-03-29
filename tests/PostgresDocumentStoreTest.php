@@ -19,6 +19,7 @@ use EventEngine\DocumentStore\Filter\DocIdFilter;
 use EventEngine\DocumentStore\Filter\EqFilter;
 use EventEngine\DocumentStore\Filter\GtFilter;
 use EventEngine\DocumentStore\Filter\InArrayFilter;
+use EventEngine\DocumentStore\Filter\LikeFilter;
 use EventEngine\DocumentStore\Filter\LtFilter;
 use EventEngine\DocumentStore\Filter\NotFilter;
 use EventEngine\DocumentStore\Filter\OrFilter;
@@ -343,6 +344,34 @@ class PostgresDocumentStoreTest extends TestCase
         }, $filteredDocs);
 
         $this->assertEquals(['bat'], $vals);
+    }
+
+    /**
+     * @test
+     */
+    public function it_handles_case_insensitive_like_filter()
+    {
+        $collectionName = 'test_case_insensitive_like_filter';
+        $this->documentStore->addCollection($collectionName);
+
+        $firstDocId = Uuid::uuid4()->toString();
+        $secondDocId = Uuid::uuid4()->toString();
+        $thirdDocId = Uuid::uuid4()->toString();
+
+        $this->documentStore->addDoc($collectionName, $firstDocId, ['foo' => 'some BaR val']);
+        $this->documentStore->addDoc($collectionName, $secondDocId, ['foo' => 'some bAt val']);
+        $this->documentStore->addDoc($collectionName, $thirdDocId, ['foo' => 'SOME baz VAL']);
+
+        $filteredDocs = \iterator_to_array($this->documentStore->filterDocs(
+            $collectionName,
+            new LikeFilter('foo', '%bat%')
+        ));
+
+        $vals = array_map(function (array $doc) {
+            return $doc['foo'];
+        }, $filteredDocs);
+
+        $this->assertEquals(['some bAt val'], $vals);
     }
 
     /**
