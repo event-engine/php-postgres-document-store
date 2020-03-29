@@ -15,12 +15,22 @@ use EventEngine\DocumentStore;
 use EventEngine\DocumentStore\Filter\Filter;
 use EventEngine\DocumentStore\Index;
 use EventEngine\DocumentStore\OrderBy\OrderBy;
+use EventEngine\DocumentStore\PartialSelect;
 use EventEngine\DocumentStore\Postgres\Exception\InvalidArgumentException;
 use EventEngine\DocumentStore\Postgres\Exception\RuntimeException;
 use EventEngine\Util\VariableType;
+use function implode;
+use function is_string;
+use function json_decode;
+use function mb_strlen;
+use function mb_substr;
+use function sprintf;
 
 final class PostgresDocumentStore implements DocumentStore\DocumentStore
 {
+    private const PARTIAL_SELECT_DOC_ID = '__partial_sel_doc_id__';
+    private const PARTIAL_SELECT_MERGE = '__partial_sel_merge__';
+
     /**
      * @var \PDO
      */
@@ -489,12 +499,7 @@ EOT;
     }
 
     /**
-     * @param string $collectionName
-     * @param Filter $filter
-     * @param int|null $skip
-     * @param int|null $limit
-     * @param OrderBy|null $orderBy
-     * @return \Traversable list of docs
+     * @inheritDoc
      */
     public function filterDocs(string $collectionName, Filter $filter, int $skip = null, int $limit = null, OrderBy $orderBy = null): \Traversable
     {
@@ -521,6 +526,68 @@ EOT;
 
         while($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
             yield json_decode($row['doc'], true);
+        }
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function findDocs(string $collectionName, Filter $filter, int $skip = null, int $limit = null, OrderBy $orderBy = null): \Traversable
+    {
+        [$filterStr, $args] = $this->filterToWhereClause($filter);
+
+        $where = $filterStr ? "WHERE $filterStr" : '';
+
+        $offset = $skip !== null ? "OFFSET $skip" : '';
+        $limit = $limit !== null ? "LIMIT $limit" : '';
+
+        $orderBy = $orderBy ? "ORDER BY " . implode(', ', $this->orderByToSort($orderBy)) : '';
+
+        $query = <<<EOT
+SELECT id, doc 
+FROM {$this->schemaName($collectionName)}.{$this->tableName($collectionName)}
+$where
+$orderBy
+$limit
+$offset;
+EOT;
+        $stmt = $this->connection->prepare($query);
+
+        $stmt->execute($args);
+
+        while($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+            yield $row['id'] => json_decode($row['doc'], true);
+        }
+    }
+
+    public function findPartialDocs(string $collectionName, PartialSelect $partialSelect, Filter $filter, int $skip = null, int $limit = null, OrderBy $orderBy = null): \Traversable
+    {
+        [$filterStr, $args] = $this->filterToWhereClause($filter);
+
+        $select = $this->makeSelect($partialSelect);
+
+        $where = $filterStr ? "WHERE $filterStr" : '';
+
+        $offset = $skip !== null ? "OFFSET $skip" : '';
+        $limit = $limit !== null ? "LIMIT $limit" : '';
+
+        $orderBy = $orderBy ? "ORDER BY " . implode(', ', $this->orderByToSort($orderBy)) : '';
+
+        $query = <<<EOT
+SELECT $select 
+FROM {$this->schemaName($collectionName)}.{$this->tableName($collectionName)}
+$where
+$orderBy
+$limit
+$offset;
+EOT;
+
+        $stmt = $this->connection->prepare($query);
+
+        $stmt->execute($args);
+
+        while($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+            yield $row[self::PARTIAL_SELECT_DOC_ID] => $this->transformPartialDoc($partialSelect, $row);
         }
     }
 
@@ -712,6 +779,83 @@ EOT;
         }, $valList));
 
         return ["$prop IN($params)", $argList, $argsCount];
+    }
+
+    private function makeSelect(PartialSelect $partialSelect): string
+    {
+        $select = 'id as "'.self::PARTIAL_SELECT_DOC_ID.'", ';
+
+        foreach ($partialSelect->fieldAliasMap() as $mapItem) {
+
+            if($mapItem['alias'] === self::PARTIAL_SELECT_DOC_ID) {
+                throw new RuntimeException(sprintf(
+                    "Invalid select alias. You cannot use %s as alias, because it is reserved for internal use",
+                    self::PARTIAL_SELECT_DOC_ID
+                ));
+            }
+
+            if($mapItem['alias'] === self::PARTIAL_SELECT_MERGE) {
+                throw new RuntimeException(sprintf(
+                    "Invalid select alias. You cannot use %s as alias, because it is reserved for internal use",
+                    self::PARTIAL_SELECT_MERGE
+                ));
+            }
+
+            if($mapItem['alias'] === PartialSelect::MERGE_ALIAS) {
+                $mapItem['alias'] = self::PARTIAL_SELECT_MERGE;
+            }
+
+            $select.= $this->propToJsonPath($mapItem['field']) . ' as "' . $mapItem['alias'] . '", ';
+        }
+
+        $select = mb_substr($select, 0, mb_strlen($select) - 2);
+
+        return $select;
+    }
+
+    private function transformPartialDoc(PartialSelect $partialSelect, array $selectedDoc): array
+    {
+        $partialDoc = [];
+
+        foreach ($partialSelect->fieldAliasMap() as ['field' => $field, 'alias' => $alias]) {
+            if($alias === PartialSelect::MERGE_ALIAS) {
+                if(null === $selectedDoc[self::PARTIAL_SELECT_MERGE] ?? null) {
+                    continue;
+                }
+
+                $value = json_decode($selectedDoc[self::PARTIAL_SELECT_MERGE], true);
+
+                if(!is_array($value)) {
+                    throw new RuntimeException('Merge not possible. $merge alias was specified for field: ' . $field . ' but field value is not an array: ' . json_encode($value));
+                }
+
+                foreach ($value as $k => $v) {
+                    $partialDoc[$k] = $v;
+                }
+
+                continue;
+            }
+
+            $value = $selectedDoc[$alias] ?? null;
+
+            if(is_string($value)) {
+                $value = json_decode($value, true);
+            }
+
+            $keys = explode('.', $alias);
+
+            $ref = &$partialDoc;
+            foreach ($keys as $i => $key) {
+                if(!array_key_exists($key, $ref)) {
+                    $ref[$key] = [];
+                }
+                $ref = &$ref[$key];
+            }
+            $ref = $value;
+            unset($ref);
+        }
+
+        return $partialDoc;
     }
 
     private function orderByToSort(DocumentStore\OrderBy\OrderBy $orderBy): array

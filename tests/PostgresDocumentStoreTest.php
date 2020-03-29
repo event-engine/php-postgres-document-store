@@ -12,6 +12,7 @@ declare(strict_types=1);
 namespace EventEngine\DocumentStoreTest\Postgres;
 
 use EventEngine\DocumentStore\Filter\AndFilter;
+use EventEngine\DocumentStore\Filter\AnyFilter;
 use EventEngine\DocumentStore\Filter\AnyOfDocIdFilter;
 use EventEngine\DocumentStore\Filter\AnyOfFilter;
 use EventEngine\DocumentStore\Filter\DocIdFilter;
@@ -21,6 +22,7 @@ use EventEngine\DocumentStore\Filter\InArrayFilter;
 use EventEngine\DocumentStore\Filter\LtFilter;
 use EventEngine\DocumentStore\Filter\NotFilter;
 use EventEngine\DocumentStore\Filter\OrFilter;
+use EventEngine\DocumentStore\PartialSelect;
 use PHPUnit\Framework\TestCase;
 use EventEngine\DocumentStore\FieldIndex;
 use EventEngine\DocumentStore\Index;
@@ -28,6 +30,8 @@ use EventEngine\DocumentStore\MultiFieldIndex;
 use EventEngine\DocumentStore\Postgres\PostgresDocumentStore;
 use Ramsey\Uuid\Uuid;
 use function array_map;
+use function array_walk;
+use function iterator_to_array;
 
 class PostgresDocumentStoreTest extends TestCase
 {
@@ -196,6 +200,35 @@ class PostgresDocumentStoreTest extends TestCase
         );
 
         $this->assertCount(2, $filteredDocs);
+    }
+
+    /**
+     * @test
+     */
+    public function it_uses_doc_ids_as_iterator_keys()
+    {
+        $collectionName = 'test_any_of_filter';
+        $this->documentStore->addCollection($collectionName);
+
+        $doc1 = ['id' => Uuid::uuid4()->toString(), 'doc' => ["foo" => "bar"]];
+        $doc2 = ['id' => Uuid::uuid4()->toString(), 'doc' => ["foo" => "baz"]];
+        $doc3 = ['id' => Uuid::uuid4()->toString(), 'doc' => ["foo" => "bat"]];
+
+        $docs = [$doc1, $doc2, $doc3];
+
+        array_walk($docs, function (array $doc) use ($collectionName) {
+            $this->documentStore->addDoc($collectionName, $doc['id'], $doc['doc']);
+        });
+
+        $filteredDocs = iterator_to_array($this->documentStore->findDocs(
+            $collectionName,
+            new AnyOfFilter("foo", ["bar", "bat"])
+        ));
+
+        $this->assertEquals([
+            $doc1['id'] => $doc1['doc'],
+            $doc3['id'] => $doc3['doc']
+        ], $filteredDocs);
     }
 
     /**
@@ -485,6 +518,156 @@ class PostgresDocumentStoreTest extends TestCase
         );
 
         $this->assertSame(2, $count);
+    }
+
+    /**
+     * @test
+     */
+    public function it_finds_partial_docs()
+    {
+        $collectionName = 'test_find_partial_docs';
+        $this->documentStore->addCollection($collectionName);
+
+        $docAId = Uuid::uuid4()->toString();
+        $docA = [
+            'some' => [
+                'prop' => 'foo',
+                'other' => [
+                    'nested' => 42
+                ]
+            ],
+            'baz' => 'bat',
+        ];
+        $this->documentStore->addDoc($collectionName, $docAId, $docA);
+
+        $docBId = Uuid::uuid4()->toString();
+        $docB = [
+            'some' => [
+                'prop' => 'bar',
+                'other' => [
+                    'nested' => 43
+                ],
+                //'baz' => 'bat', missing so should be null
+            ],
+        ];
+        $this->documentStore->addDoc($collectionName, $docBId, $docB);
+
+        $docCId = Uuid::uuid4()->toString();
+        $docC = [
+            'some' => [
+                'prop' => 'foo',
+                'other' => [
+                    //'nested' => 42, missing, so should be null
+                    'ignoredNested' => 'value'
+                ]
+            ],
+            'baz' => 'bat',
+        ];
+        $this->documentStore->addDoc($collectionName, $docCId, $docC);
+
+        $partialSelect = new PartialSelect([
+            'some.alias' => 'some.prop', // Nested alias <- Nested field
+            'magicNumber' => 'some.other.nested', // Top level alias <- Nested Field
+            'baz', // Top level field,
+        ]);
+
+        $result = iterator_to_array($this->documentStore->findPartialDocs($collectionName, $partialSelect, new AnyFilter()));
+
+        $this->assertEquals([
+            'some' => [
+                'alias' => 'foo',
+            ],
+            'magicNumber' => 42,
+            'baz' => 'bat',
+        ], $result[$docAId]);
+
+        $this->assertEquals([
+            'some' => [
+                'alias' => 'bar',
+            ],
+            'magicNumber' => 43,
+            'baz' => null,
+        ], $result[$docBId]);
+
+        $this->assertEquals([
+            'some' => [
+                'alias' => 'foo',
+            ],
+            'magicNumber' => null,
+            'baz' => 'bat',
+        ], $result[$docCId]);
+    }
+
+    /**
+     * @test
+     */
+    public function it_applies_merge_alias_for_nested_fields_if_specified()
+    {
+        $collectionName = 'test_applies_merge_alias';
+        $this->documentStore->addCollection($collectionName);
+
+        $docAId = Uuid::uuid4()->toString();
+        $docA = [
+            'some' => [
+                'prop' => 'foo',
+                'other' => [
+                    'nested' => 42
+                ]
+            ],
+            'baz' => 'bat',
+        ];
+        $this->documentStore->addDoc($collectionName, $docAId, $docA);
+
+        $docBId = Uuid::uuid4()->toString();
+        $docB = [
+            'differentTopLevel' => [
+                'prop' => 'bar',
+                'other' => [
+                    'nested' => 43
+                ],
+            ],
+            'baz' => 'bat',
+        ];
+        $this->documentStore->addDoc($collectionName, $docBId, $docB);
+
+        $docCId = Uuid::uuid4()->toString();
+        $docC = [
+            'some' => [
+                'prop' => 'foo',
+                'other' => [
+                    'nested' => 43
+                ],
+            ],
+            //'baz' => 'bat', missing top level
+        ];
+        $this->documentStore->addDoc($collectionName, $docCId, $docC);
+
+        $partialSelect = new PartialSelect([
+            '$merge' => 'some', // $merge alias <- Nested field
+            'baz', // Top level field
+        ]);
+
+        $result = iterator_to_array($this->documentStore->findPartialDocs($collectionName, $partialSelect, new AnyFilter()));
+
+        $this->assertEquals([
+            'prop' => 'foo',
+            'other' => [
+                'nested' => 42
+            ],
+            'baz' => 'bat'
+        ], $result[$docAId]);
+
+        $this->assertEquals([
+            'baz' => 'bat',
+        ], $result[$docBId]);
+
+        $this->assertEquals([
+            'prop' => 'foo',
+            'other' => [
+                'nested' => 43
+            ],
+            'baz' => null
+        ], $result[$docCId]);
     }
 
     private function getIndexes(string $collectionName): array
