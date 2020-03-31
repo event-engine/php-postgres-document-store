@@ -630,6 +630,72 @@ class PostgresDocumentStoreTest extends TestCase
     /**
      * @test
      */
+    public function it_gets_partial_doc_by_id()
+    {
+        $collectionName = 'test_get_partial_doc';
+        $this->documentStore->addCollection($collectionName);
+
+        $docAId = Uuid::uuid4()->toString();
+        $docA = [
+            'some' => [
+                'prop' => 'foo',
+                'other' => [
+                    'nested' => 42
+                ]
+            ],
+            'baz' => 'bat',
+        ];
+        $this->documentStore->addDoc($collectionName, $docAId, $docA);
+
+        $docBId = Uuid::uuid4()->toString();
+        $docB = [
+            'some' => [
+                'prop' => 'bar',
+                'other' => [
+                    'nested' => 43
+                ],
+                //'baz' => 'bat', missing so should be null
+            ],
+        ];
+        $this->documentStore->addDoc($collectionName, $docBId, $docB);
+
+        $docCId = Uuid::uuid4()->toString();
+        $docC = [
+            'some' => [
+                'prop' => 'foo',
+                'other' => [
+                    //'nested' => 42, missing, so should be null
+                    'ignoredNested' => 'value'
+                ]
+            ],
+            'baz' => 'bat',
+        ];
+        $this->documentStore->addDoc($collectionName, $docCId, $docC);
+
+        $partialSelect = new PartialSelect([
+            'some.alias' => 'some.prop', // Nested alias <- Nested field
+            'magicNumber' => 'some.other.nested', // Top level alias <- Nested Field
+            'baz', // Top level field,
+        ]);
+
+        $partialDocA = $this->documentStore->getPartialDoc($collectionName, $partialSelect, $docAId);
+
+        $this->assertEquals([
+            'some' => [
+                'alias' => 'foo',
+            ],
+            'magicNumber' => 42,
+            'baz' => 'bat',
+        ], $partialDocA);
+
+        $partialDocD = $this->documentStore->getPartialDoc($collectionName, $partialSelect, Uuid::uuid4()->toString());
+
+        $this->assertNull($partialDocD);
+    }
+
+    /**
+     * @test
+     */
     public function it_applies_merge_alias_for_nested_fields_if_specified()
     {
         $collectionName = 'test_applies_merge_alias';

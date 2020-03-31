@@ -501,6 +501,31 @@ EOT;
     /**
      * @inheritDoc
      */
+    public function getPartialDoc(string $collectionName, PartialSelect $partialSelect, string $docId): ?array
+    {
+        $select = $this->makeSelect($partialSelect);
+
+        $query = <<<EOT
+SELECT $select
+FROM {$this->schemaName($collectionName)}.{$this->tableName($collectionName)}
+WHERE id = :id
+EOT;
+        $stmt = $this->connection->prepare($query);
+
+        $stmt->execute(['id' => $docId]);
+
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+        if(!$row) {
+            return null;
+        }
+
+        return $this->transformPartialDoc($partialSelect, $row);
+    }
+
+    /**
+     * @inheritDoc
+     */
     public function filterDocs(string $collectionName, Filter $filter, int $skip = null, int $limit = null, OrderBy $orderBy = null): \Traversable
     {
         [$filterStr, $args] = $this->filterToWhereClause($filter);
