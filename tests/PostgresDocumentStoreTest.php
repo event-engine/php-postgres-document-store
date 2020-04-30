@@ -206,6 +206,32 @@ class PostgresDocumentStoreTest extends TestCase
     /**
      * @test
      */
+    public function it_handles_any_of_filter_with_empty_args()
+    {
+        $collectionName = 'test_any_of_filter_with_empty_args';
+        $this->documentStore->addCollection($collectionName);
+
+        $doc1 = ["foo" => "bar"];
+        $doc2 = ["foo" => "baz"];
+        $doc3 = ["foo" => "bat"];
+
+        $docs = [$doc1, $doc2, $doc3];
+
+        array_walk($docs, function (array $doc) use ($collectionName) {
+            $this->documentStore->addDoc($collectionName, Uuid::uuid4()->toString(), $doc);
+        });
+
+        $filteredDocs = $this->documentStore->filterDocs(
+            $collectionName,
+            new AnyOfFilter("foo", [])
+        );
+
+        $this->assertCount(0, $filteredDocs);
+    }
+
+    /**
+     * @test
+     */
     public function it_uses_doc_ids_as_iterator_keys()
     {
         $collectionName = 'test_any_of_filter';
@@ -265,6 +291,37 @@ class PostgresDocumentStoreTest extends TestCase
     /**
      * @test
      */
+    public function it_handles_not_any_of_filter_with_empty_args()
+    {
+        $collectionName = 'test_not_any_of_filter_with_empty_args';
+        $this->documentStore->addCollection($collectionName);
+
+        $doc1 = ["foo" => "bar"];
+        $doc2 = ["foo" => "baz"];
+        $doc3 = ["foo" => "bat"];
+
+        $docs = [$doc1, $doc2, $doc3];
+
+        array_walk($docs, function (array $doc) use ($collectionName) {
+            $this->documentStore->addDoc($collectionName, Uuid::uuid4()->toString(), $doc);
+        });
+
+        $filteredDocs = $this->documentStore->filterDocs(
+            $collectionName,
+            new NotFilter(new AnyOfFilter("foo", []))
+        );
+
+        $filteredDocs = iterator_to_array($filteredDocs);
+
+        $this->assertCount(3, $filteredDocs);
+
+        $this->assertSame('baz', $filteredDocs[1]['foo']);
+        $this->assertSame('bat', $filteredDocs[2]['foo']);
+    }
+
+    /**
+     * @test
+     */
     public function it_handles_doc_id_filter()
     {
         $collectionName = 'test_doc_id_filter';
@@ -319,6 +376,36 @@ class PostgresDocumentStoreTest extends TestCase
     /**
      * @test
      */
+    public function it_handles_any_of_doc_id_filter_with_empty_args()
+    {
+        $collectionName = 'test_any_of_doc_id_filter_with_empty_args';
+        $this->documentStore->addCollection($collectionName);
+
+        $firstDocId = Uuid::uuid4()->toString();
+        $secondDocId = Uuid::uuid4()->toString();
+        $thirdDocId = Uuid::uuid4()->toString();
+
+        $this->documentStore->addDoc($collectionName, $firstDocId, ['foo' => 'bar']);
+        $this->documentStore->addDoc($collectionName, $secondDocId, ['foo' => 'bat']);
+        $this->documentStore->addDoc($collectionName, $thirdDocId, ['foo' => 'baz']);
+
+        $filteredDocs = \iterator_to_array($this->documentStore->filterDocs(
+            $collectionName,
+            new AnyOfDocIdFilter([])
+        ));
+
+        $this->assertCount(0, $filteredDocs);
+
+        $vals = array_map(function (array $doc) {
+            return $doc['foo'];
+        }, $filteredDocs);
+
+        $this->assertEquals([], $vals);
+    }
+
+    /**
+     * @test
+     */
     public function it_handles_not_any_of_id_filter()
     {
         $collectionName = 'test_any_of_doc_id_filter';
@@ -344,6 +431,36 @@ class PostgresDocumentStoreTest extends TestCase
         }, $filteredDocs);
 
         $this->assertEquals(['bat'], $vals);
+    }
+
+    /**
+     * @test
+     */
+    public function it_handles_not_any_of_id_filter_with_empty_args()
+    {
+        $collectionName = 'test_any_of_doc_id_filter_with_empty_args';
+        $this->documentStore->addCollection($collectionName);
+
+        $firstDocId = Uuid::uuid4()->toString();
+        $secondDocId = Uuid::uuid4()->toString();
+        $thirdDocId = Uuid::uuid4()->toString();
+
+        $this->documentStore->addDoc($collectionName, $firstDocId, ['foo' => 'bar']);
+        $this->documentStore->addDoc($collectionName, $secondDocId, ['foo' => 'bat']);
+        $this->documentStore->addDoc($collectionName, $thirdDocId, ['foo' => 'baz']);
+
+        $filteredDocs = \iterator_to_array($this->documentStore->filterDocs(
+            $collectionName,
+            new NotFilter(new AnyOfDocIdFilter([]))
+        ));
+
+        $this->assertCount(3, $filteredDocs);
+
+        $vals = array_map(function (array $doc) {
+            return $doc['foo'];
+        }, $filteredDocs);
+
+        $this->assertEquals(['bar', 'bat', 'baz'], $vals);
     }
 
     /**

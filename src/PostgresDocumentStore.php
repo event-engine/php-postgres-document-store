@@ -750,6 +750,14 @@ EOT;
                 [$innerFilterStr, $args, $argsCount] = $this->filterToWhereClause($innerFilter, $argsCount);
 
                 if($innerFilter instanceof DocumentStore\Filter\AnyOfFilter || $innerFilter instanceof DocumentStore\Filter\AnyOfDocIdFilter) {
+                    if ($argsCount === 0) {
+                        return [
+                            substr_replace(' 1 != 1 ', ' 1 = 1 ', $innerFilterStr),
+                            $args,
+                            $argsCount
+                        ];
+                    }
+
                     $inPos = strpos($innerFilterStr, ' IN(');
                     $filterStr = substr_replace($innerFilterStr, ' NOT IN(', $inPos, 4 /* " IN(" */);
                     return [$filterStr, $args, $argsCount];
@@ -795,6 +803,9 @@ EOT;
 
     private function makeInClause(string $prop, array $valList, int $argsCount, bool $jsonEncode = false): array
     {
+        if ($valList === []) {
+            return [' 1 != 1 ', [], 0];
+        }
         $argList = [];
         $params = \implode(",", \array_map(function ($val) use (&$argsCount, &$argList, $jsonEncode) {
             $param = ":a$argsCount";
