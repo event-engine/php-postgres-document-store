@@ -9,7 +9,7 @@ services:
       - PROOPH_ENV=dev
       - PDO_DSN=pgsql:host=postgres port=5432 dbname=event_engine
       - PDO_USER=postgres
-      - PDO_PWD=
+      - PDO_PWD=test
 
   postgres:
     image: postgres:alpine
@@ -17,3 +17,4 @@ services:
       - 5432:5432
     environment:
       - POSTGRES_DB=event_engine
+      - POSTGRES_PASSWORD=test
