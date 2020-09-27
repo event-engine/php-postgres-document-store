@@ -19,6 +19,7 @@ use EventEngine\DocumentStore\PartialSelect;
 use EventEngine\DocumentStore\Postgres\Exception\InvalidArgumentException;
 use EventEngine\DocumentStore\Postgres\Exception\RuntimeException;
 use EventEngine\Util\VariableType;
+
 use function implode;
 use function is_string;
 use function json_decode;
@@ -431,6 +432,80 @@ EOT;
         } else {
             $this->addDoc($collectionName, $docId, $docOrSubset);
         }
+    }
+
+    /**
+     * @param string $collectionName
+     * @param string $docId
+     * @param array $doc
+     * @throws \Throwable if updating did not succeed
+     */
+    public function replaceDoc(string $collectionName, string $docId, array $doc): void
+    {
+        $metadataStr = '';
+        $metadata = [];
+
+        if($this->useMetadataColumns && array_key_exists('metadata', $doc)) {
+            $metadata = $doc['metadata'];
+            unset($doc['metadata']);
+
+
+            foreach ($metadata as $k => $v) {
+                $metadataStr .= ', '.$k.' = :'.$k;
+            }
+        }
+
+        $cmd = <<<EOT
+UPDATE {$this->schemaName($collectionName)}.{$this->tableName($collectionName)}
+SET doc = :doc{$metadataStr}
+WHERE id = :id
+;
+EOT;
+        $this->transactional(function () use ($cmd, $docId, $doc, $metadata) {
+            $this->connection->prepare($cmd)->execute(array_merge([
+                'id' => $docId,
+                'doc' => json_encode($doc)
+           ], $metadata));
+        });
+    }
+
+    /**
+     * @param string $collectionName
+     * @param Filter $filter
+     * @param array $set
+     * @throws \Throwable in case of connection error or other issues
+     */
+    public function replaceMany(string $collectionName, Filter $filter, array $set): void
+    {
+        [$filterStr, $args] = $this->filterToWhereClause($filter);
+
+        $where = $filterStr? "WHERE $filterStr" : '';
+
+        $metadataStr = '';
+        $metadata = [];
+
+        if($this->useMetadataColumns && array_key_exists('metadata', $set)) {
+            $metadata = $set['metadata'];
+            unset($set['metadata']);
+
+
+            foreach ($metadata as $k => $v) {
+                $metadataStr .= ', '.$k.' = :'.$k;
+            }
+        }
+
+        $cmd = <<<EOT
+UPDATE {$this->schemaName($collectionName)}.{$this->tableName($collectionName)}
+SET doc = :doc{$metadataStr}
+$where;
+EOT;
+
+        $args['doc'] = json_encode($set);
+        $args = array_merge($args, $metadata);
+
+        $this->transactional(function () use ($cmd, $args) {
+            $this->connection->prepare($cmd)->execute($args);
+        });
     }
 
     /**
