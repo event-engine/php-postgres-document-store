@@ -150,6 +150,71 @@ class PostgresDocumentStoreTest extends TestCase
         );
         $this->assertStringStartsWith('CREATE UNIQUE INDEX', $indexes[1]['indexdef']);
     }
+  
+    /**
+     * @test
+     */
+    public function it_adds_and_updates_a_doc()
+    {
+        $collectionName = 'test_adds_and_updates_a_doc';
+        $this->documentStore->addCollection($collectionName);
+
+        $doc = [
+            'some' => [
+                'prop' => 'foo',
+                'other' => [
+                    'nested' => 42
+                ]
+            ],
+            'baz' => 'bat',
+        ];
+
+        $docId = Uuid::uuid4()->toString();
+        $this->documentStore->addDoc($collectionName, $docId, $doc);
+
+        $persistedDoc = $this->documentStore->getDoc($collectionName, $docId);
+
+        $this->assertEquals($doc, $persistedDoc);
+
+        $doc['baz'] = 'changed val';
+
+        $this->documentStore->updateDoc($collectionName, $docId, $doc);
+
+        $filter = new EqFilter('baz', 'changed val');
+
+        $filteredDocs = $this->documentStore->findDocs($collectionName, $filter);
+
+        $this->assertCount(1, $filteredDocs);
+    }
+
+    /**
+     * @test
+     */
+    public function it_updates_a_subset_of_a_doc()
+    {
+        $collectionName = 'test_updates_a_subset_of_a_doc';
+        $this->documentStore->addCollection($collectionName);
+
+        $doc = [
+            'some' => [
+                'prop' => 'foo',
+                'other' => 'bar'
+            ],
+            'baz' => 'bat',
+        ];
+
+        $docId = Uuid::uuid4()->toString();
+        $this->documentStore->addDoc($collectionName, $docId, $doc);
+
+        $this->documentStore->updateDoc($collectionName, $docId, [
+            'some' => [
+                'prop' => 'fuzz'
+            ]
+        ]);
+
+        $filteredDocs = array_values(iterator_to_array($this->documentStore->findDocs($collectionName, new EqFilter('some.prop', 'fuzz'))));
+        $this->assertArrayNotHasKey('other', $filteredDocs[0]['some']);
+    }
 
     /**
      * @test
