@@ -150,7 +150,7 @@ class PostgresDocumentStoreTest extends TestCase
         );
         $this->assertStringStartsWith('CREATE UNIQUE INDEX', $indexes[1]['indexdef']);
     }
-
+  
     /**
      * @test
      */
@@ -214,6 +214,64 @@ class PostgresDocumentStoreTest extends TestCase
 
         $filteredDocs = array_values(iterator_to_array($this->documentStore->findDocs($collectionName, new EqFilter('some.prop', 'fuzz'))));
         $this->assertArrayNotHasKey('other', $filteredDocs[0]['some']);
+    }
+
+    /**
+     * @test
+     */
+    public function it_replaces_a_doc()
+    {
+        $collectionName = 'test_replaces_a_doc';
+        $this->documentStore->addCollection($collectionName);
+
+        $doc = [
+            'some' => [
+                'prop' => 'foo',
+                'other' => [
+                    'nested' => 42
+                ]
+            ],
+            'baz' => 'bat',
+        ];
+
+        $docId = Uuid::uuid4()->toString();
+        $this->documentStore->addDoc($collectionName, $docId, $doc);
+
+        $doc = ['baz' => 'changed val'];
+
+        $this->documentStore->replaceDoc($collectionName, $docId, $doc);
+
+        $filter = new EqFilter('baz', 'changed val');
+
+        $filteredDocs = $this->documentStore->findDocs($collectionName, $filter);
+
+        $this->assertCount(1, $filteredDocs);
+    }
+
+    /**
+     * @test
+     */
+    public function it_replaces_many()
+    {
+        $collectionName = 'test_replaces_many';
+        $this->documentStore->addCollection($collectionName);
+
+        $this->documentStore->addDoc($collectionName, Uuid::uuid4()->toString(), ['some' => ['prop' => 'foo', 'other' => ['prop' => 'bat']]]);
+        $this->documentStore->addDoc($collectionName, Uuid::uuid4()->toString(), ['some' => ['prop' => 'bar', 'other' => ['prop' => 'bat']]]);
+        $this->documentStore->addDoc($collectionName, Uuid::uuid4()->toString(), ['some' => ['prop' => 'bar']]);
+
+        $doc = ['some' => ['prop' => 'fuzz']];
+        $this->documentStore->replaceMany(
+            $collectionName,
+            new EqFilter('some.other.prop', 'bat'),
+            $doc
+        );
+
+        $filteredDocs = array_values(iterator_to_array($this->documentStore->findDocs($collectionName, new EqFilter('some.prop', 'fuzz'))));
+
+        $this->assertCount(2, $filteredDocs);
+        $this->assertEquals($doc, $filteredDocs[0]);
+        $this->assertEquals($doc, $filteredDocs[1]);
     }
 
     /**
