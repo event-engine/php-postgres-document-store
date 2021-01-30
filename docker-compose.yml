@@ -2,7 +2,7 @@ version: '2'
 
 services:
   php:
-    image: prooph/php:7.2-cli
+    image: prooph/php:8.0-cli
     volumes:
       - .:/app
     environment:

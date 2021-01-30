@@ -1,7 +1,7 @@
 <?php
 /**
  * This file is part of the event-engine/php-postgres-document-store.
- * (c) 2019 prooph software GmbH <contact@prooph.de>
+ * (c) 2019-2021 prooph software GmbH <contact@prooph.de>
  *
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
@@ -827,7 +827,7 @@ EOT;
                 if($innerFilter instanceof DocumentStore\Filter\AnyOfFilter || $innerFilter instanceof DocumentStore\Filter\AnyOfDocIdFilter) {
                     if ($argsCount === 0) {
                         return [
-                            substr_replace(' 1 != 1 ', ' 1 = 1 ', $innerFilterStr),
+                            str_replace(' 1 != 1 ', ' 1 = 1 ', $innerFilterStr),
                             $args,
                             $argsCount
                         ];
