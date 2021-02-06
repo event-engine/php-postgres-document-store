@@ -16,7 +16,7 @@
     }
   ],
   "require": {
-    "php": "^7.2",
+    "php": "^7.2 || ^8.0",
     "ext-pdo": "*",
     "event-engine/php-persistence": "^0.8"
   },
@@ -27,7 +27,7 @@
     "phpstan/phpstan": "^0.12.48",
     "phpstan/phpstan-strict-rules": "^0.12.5",
     "phpunit/phpunit": "^8.5.8",
-    "prooph/php-cs-fixer-config": "^0.3.1",
+    "prooph/php-cs-fixer-config": "^0.4.0",
     "ramsey/uuid" : "^4.1.1",
     "roave/security-advisories": "dev-master",
     "php-coveralls/php-coveralls": "^2.2.0"
