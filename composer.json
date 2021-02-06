@@ -18,7 +18,7 @@
   "require": {
     "php": "^7.2 || ^8.0",
     "ext-pdo": "*",
-    "event-engine/php-persistence": "^0.8"
+    "event-engine/php-persistence": "^0.9"
   },
   "require-dev": {
     "infection/infection": "^0.15.3",
