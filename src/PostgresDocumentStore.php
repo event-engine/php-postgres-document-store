@@ -16,8 +16,9 @@ use EventEngine\DocumentStore\Filter\Filter;
 use EventEngine\DocumentStore\Index;
 use EventEngine\DocumentStore\OrderBy\OrderBy;
 use EventEngine\DocumentStore\PartialSelect;
-use EventEngine\DocumentStore\Postgres\Exception\InvalidArgumentException;
 use EventEngine\DocumentStore\Postgres\Exception\RuntimeException;
+use EventEngine\DocumentStore\Postgres\Filter\DefaultFilterProcessor;
+use EventEngine\DocumentStore\Postgres\Filter\FilterProcessor;
 use EventEngine\Util\VariableType;
 
 use function implode;
@@ -37,23 +38,34 @@ final class PostgresDocumentStore implements DocumentStore\DocumentStore
      */
     private $connection;
 
+    /**
+     * @var FilterProcessor
+     */
+    private $filterProcessor;
+
     private $tablePrefix = 'em_ds_';
 
     private $docIdSchema = 'UUID NOT NULL';
 
     private $manageTransactions;
 
-    private $useMetadataColumns = false;
+    private $useMetadataColumns;
 
     public function __construct(
         \PDO $connection,
         string $tablePrefix = null,
         string $docIdSchema = null,
         bool $transactional = true,
-        bool $useMetadataColumns = false
+        bool $useMetadataColumns = false,
+        FilterProcessor $filterProcessor = null
     ) {
         $this->connection = $connection;
         $this->connection->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+
+        if (null === $filterProcessor) {
+            $filterProcessor = new DefaultFilterProcessor($useMetadataColumns);
+        }
+        $this->filterProcessor = $filterProcessor;
 
         if(null !== $tablePrefix) {
             $this->tablePrefix = $tablePrefix;
@@ -384,7 +396,7 @@ EOT;
      */
     public function updateMany(string $collectionName, Filter $filter, array $set): void
     {
-        [$filterStr, $args] = $this->filterToWhereClause($filter);
+        [$filterStr, $args] = $this->filterProcessor->process($filter);
 
         $where = $filterStr? "WHERE $filterStr" : '';
 
@@ -477,7 +489,7 @@ EOT;
      */
     public function replaceMany(string $collectionName, Filter $filter, array $set): void
     {
-        [$filterStr, $args] = $this->filterToWhereClause($filter);
+        [$filterStr, $args] = $this->filterProcessor->process($filter);
 
         $where = $filterStr? "WHERE $filterStr" : '';
 
@@ -534,7 +546,7 @@ EOT;
      */
     public function deleteMany(string $collectionName, Filter $filter): void
     {
-        [$filterStr, $args] = $this->filterToWhereClause($filter);
+        [$filterStr, $args] = $this->filterProcessor->process($filter);
 
         $where = $filterStr? "WHERE $filterStr" : '';
 
@@ -603,7 +615,7 @@ EOT;
      */
     public function filterDocs(string $collectionName, Filter $filter, int $skip = null, int $limit = null, OrderBy $orderBy = null): \Traversable
     {
-        [$filterStr, $args] = $this->filterToWhereClause($filter);
+        [$filterStr, $args] = $this->filterProcessor->process($filter);
 
         $where = $filterStr ? "WHERE $filterStr" : '';
 
@@ -634,7 +646,7 @@ EOT;
      */
     public function findDocs(string $collectionName, Filter $filter, int $skip = null, int $limit = null, OrderBy $orderBy = null): \Traversable
     {
-        [$filterStr, $args] = $this->filterToWhereClause($filter);
+        [$filterStr, $args] = $this->filterProcessor->process($filter);
 
         $where = $filterStr ? "WHERE $filterStr" : '';
 
@@ -662,7 +674,7 @@ EOT;
 
     public function findPartialDocs(string $collectionName, PartialSelect $partialSelect, Filter $filter, int $skip = null, int $limit = null, OrderBy $orderBy = null): \Traversable
     {
-        [$filterStr, $args] = $this->filterToWhereClause($filter);
+        [$filterStr, $args] = $this->filterProcessor->process($filter);
 
         $select = $this->makeSelect($partialSelect);
 
@@ -698,7 +710,7 @@ EOT;
      */
     public function filterDocIds(string $collectionName, Filter $filter): array
     {
-        [$filterStr, $args] = $this->filterToWhereClause($filter);
+        [$filterStr, $args] = $this->filterProcessor->process($filter);
 
         $where = $filterStr ? "WHERE {$filterStr}" : '';
         $query = "SELECT id FROM {$this->schemaName($collectionName)}.{$this->tableName($collectionName)} {$where}";
@@ -721,7 +733,7 @@ EOT;
      */
     public function countDocs(string $collectionName, Filter $filter): int
     {
-        [$filterStr, $args] = $this->filterToWhereClause($filter);
+        [$filterStr, $args] = $this->filterProcessor->process($filter);
 
         $where = $filterStr? "WHERE $filterStr" : '';
 
@@ -756,105 +768,6 @@ EOT;
         }
     }
 
-    private function filterToWhereClause(Filter $filter, $argsCount = 0): array
-    {
-        if($filter instanceof DocumentStore\Filter\AnyFilter) {
-            if($argsCount > 0) {
-                throw new InvalidArgumentException('AnyFilter cannot be used together with other filters.');
-            }
-            return [null, [], $argsCount];
-        }
-
-        if($filter instanceof DocumentStore\Filter\AndFilter) {
-            [$filterA, $argsA, $argsCount] = $this->filterToWhereClause($filter->aFilter(), $argsCount);
-            [$filterB, $argsB, $argsCount] = $this->filterToWhereClause($filter->bFilter(), $argsCount);
-            return ["($filterA AND $filterB)", array_merge($argsA, $argsB), $argsCount];
-        }
-
-        if($filter instanceof DocumentStore\Filter\OrFilter) {
-            [$filterA, $argsA, $argsCount] = $this->filterToWhereClause($filter->aFilter(), $argsCount);
-            [$filterB, $argsB, $argsCount] = $this->filterToWhereClause($filter->bFilter(), $argsCount);
-            return ["($filterA OR $filterB)", array_merge($argsA, $argsB), $argsCount];
-        }
-
-        switch (get_class($filter)) {
-            case DocumentStore\Filter\DocIdFilter::class:
-                /** @var DocumentStore\Filter\DocIdFilter $filter */
-                return ["id = :a$argsCount", ["a$argsCount" => $filter->val()], ++$argsCount];
-            case DocumentStore\Filter\AnyOfDocIdFilter::class:
-                /** @var DocumentStore\Filter\AnyOfDocIdFilter $filter */
-                return $this->makeInClause('id', $filter->valList(), $argsCount);
-            case DocumentStore\Filter\AnyOfFilter::class:
-                /** @var DocumentStore\Filter\AnyOfFilter $filter */
-                return $this->makeInClause($this->propToJsonPath($filter->prop()), $filter->valList(), $argsCount, $this->shouldJsonEncodeVal($filter->prop()));
-            case DocumentStore\Filter\EqFilter::class:
-                /** @var DocumentStore\Filter\EqFilter $filter */
-                $prop = $this->propToJsonPath($filter->prop());
-                return ["$prop = :a$argsCount", ["a$argsCount" => $this->prepareVal($filter->val(), $filter->prop())], ++$argsCount];
-            case DocumentStore\Filter\GtFilter::class:
-                /** @var DocumentStore\Filter\GtFilter $filter */
-                $prop = $this->propToJsonPath($filter->prop());
-                return ["$prop > :a$argsCount", ["a$argsCount" => $this->prepareVal($filter->val(), $filter->prop())], ++$argsCount];
-            case DocumentStore\Filter\GteFilter::class:
-                /** @var DocumentStore\Filter\GteFilter $filter */
-                $prop = $this->propToJsonPath($filter->prop());
-                return ["$prop >= :a$argsCount", ["a$argsCount" => $this->prepareVal($filter->val(), $filter->prop())], ++$argsCount];
-            case DocumentStore\Filter\LtFilter::class:
-                /** @var DocumentStore\Filter\LtFilter $filter */
-                $prop = $this->propToJsonPath($filter->prop());
-                return ["$prop < :a$argsCount", ["a$argsCount" => $this->prepareVal($filter->val(), $filter->prop())], ++$argsCount];
-            case DocumentStore\Filter\LteFilter::class:
-                /** @var DocumentStore\Filter\LteFilter $filter */
-                $prop = $this->propToJsonPath($filter->prop());
-                return ["$prop <= :a$argsCount", ["a$argsCount" => $this->prepareVal($filter->val(), $filter->prop())], ++$argsCount];
-            case DocumentStore\Filter\LikeFilter::class:
-                /** @var DocumentStore\Filter\LikeFilter $filter */
-                $prop = $this->propToJsonPath($filter->prop());
-                $propParts = explode('->', $prop);
-                $lastProp = array_pop($propParts);
-                $prop = implode('->', $propParts) . '->>'.$lastProp;
-                return ["$prop iLIKE :a$argsCount", ["a$argsCount" => $filter->val()], ++$argsCount];
-            case DocumentStore\Filter\NotFilter::class:
-                /** @var DocumentStore\Filter\NotFilter $filter */
-                $innerFilter = $filter->innerFilter();
-
-                if (!$this->isPropFilter($innerFilter)) {
-                    throw new RuntimeException('Not filter cannot be combined with a non prop filter!');
-                }
-
-                [$innerFilterStr, $args, $argsCount] = $this->filterToWhereClause($innerFilter, $argsCount);
-
-                if($innerFilter instanceof DocumentStore\Filter\AnyOfFilter || $innerFilter instanceof DocumentStore\Filter\AnyOfDocIdFilter) {
-                    if ($argsCount === 0) {
-                        return [
-                            str_replace(' 1 != 1 ', ' 1 = 1 ', $innerFilterStr),
-                            $args,
-                            $argsCount
-                        ];
-                    }
-
-                    $inPos = strpos($innerFilterStr, ' IN(');
-                    $filterStr = substr_replace($innerFilterStr, ' NOT IN(', $inPos, 4 /* " IN(" */);
-                    return [$filterStr, $args, $argsCount];
-                }
-
-                return ["NOT $innerFilterStr", $args, $argsCount];
-            case DocumentStore\Filter\InArrayFilter::class:
-                /** @var DocumentStore\Filter\InArrayFilter $filter */
-                $prop = $this->propToJsonPath($filter->prop());
-                return ["$prop @> :a$argsCount", ["a$argsCount" => '[' . $this->prepareVal($filter->val(), $filter->prop()) . ']'], ++$argsCount];
-            case DocumentStore\Filter\ExistsFilter::class:
-                /** @var DocumentStore\Filter\ExistsFilter $filter */
-                $prop = $this->propToJsonPath($filter->prop());
-                $propParts = explode('->', $prop);
-                $lastProp = trim(array_pop($propParts), "'");
-                $parentProps = implode('->', $propParts);
-                return ["JSONB_EXISTS($parentProps, '$lastProp')", [], $argsCount];
-            default:
-                throw new RuntimeException('Unsupported filter type. Got ' . get_class($filter));
-        }
-    }
-
     private function propToJsonPath(string $field): string
     {
         if($this->useMetadataColumns && strpos($field, 'metadata.') === 0) {
@@ -862,34 +775,6 @@ EOT;
         }
 
         return "doc->'" . str_replace('.', "'->'", $field) . "'";
-    }
-
-    private function isPropFilter(Filter $filter): bool
-    {
-        switch (get_class($filter)) {
-            case DocumentStore\Filter\AndFilter::class:
-            case DocumentStore\Filter\OrFilter::class:
-            case DocumentStore\Filter\NotFilter::class:
-                return false;
-            default:
-                return true;
-        }
-    }
-
-    private function makeInClause(string $prop, array $valList, int $argsCount, bool $jsonEncode = false): array
-    {
-        if ($valList === []) {
-            return [' 1 != 1 ', [], 0];
-        }
-        $argList = [];
-        $params = \implode(",", \array_map(function ($val) use (&$argsCount, &$argList, $jsonEncode) {
-            $param = ":a$argsCount";
-            $argList["a$argsCount"] = $jsonEncode? \json_encode($val) : $val;
-            $argsCount++;
-            return $param;
-        }, $valList));
-
-        return ["$prop IN($params)", $argList, $argsCount];
     }
 
     private function makeSelect(PartialSelect $partialSelect): string
@@ -1016,24 +901,6 @@ EOT;
         return $cmd;
     }
 
-    private function prepareVal($value, string $prop)
-    {
-        if(!$this->shouldJsonEncodeVal($prop)) {
-            return $value;
-        }
-
-        return \json_encode($value);
-    }
-
-    private function shouldJsonEncodeVal(string $prop): bool
-    {
-        if($this->useMetadataColumns && strpos($prop, 'metadata.') === 0) {
-            return false;
-        }
-
-        return true;
-    }
-
     private function getIndexName(Index $index): ?string
     {
         if(method_exists($index, 'name')) {
@@ -1066,12 +933,12 @@ EOT;
         return mb_strtolower($this->tablePrefix . $collectionName);
     }
 
-     private function schemaName(string $collectionName): string
-     {
-         $schemaName = 'public';
-         if (false !== $dotPosition = strpos($collectionName, '.')) {
-             $schemaName = substr($collectionName, 0, $dotPosition);
-         }
-         return mb_strtolower($schemaName);
-     }
+    private function schemaName(string $collectionName): string
+    {
+        $schemaName = 'public';
+        if (false !== $dotPosition = strpos($collectionName, '.')) {
+            $schemaName = substr($collectionName, 0, $dotPosition);
+        }
+        return mb_strtolower($schemaName);
+    }
 }
