@@ -427,7 +427,7 @@ EOT;
     {
         $doc = $this->getDoc($collectionName, $docId);
 
-        if($doc) {
+        if ($doc !== null) {
             $this->updateDoc($collectionName, $docId, $docOrSubset);
         } else {
             $this->addDoc($collectionName, $docId, $docOrSubset);
