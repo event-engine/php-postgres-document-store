@@ -150,7 +150,7 @@ class PostgresDocumentStoreTest extends TestCase
         );
         $this->assertStringStartsWith('CREATE UNIQUE INDEX', $indexes[1]['indexdef']);
     }
-  
+
     /**
      * @test
      */
@@ -214,6 +214,30 @@ class PostgresDocumentStoreTest extends TestCase
 
         $filteredDocs = array_values(iterator_to_array($this->documentStore->findDocs($collectionName, new EqFilter('some.prop', 'fuzz'))));
         $this->assertArrayNotHasKey('other', $filteredDocs[0]['some']);
+    }
+
+    /**
+     * @test
+     */
+    public function it_upserts_empty_array_doc(): void
+    {
+        $collectionName = 'test_upserts_empty_doc';
+        $this->documentStore->addCollection($collectionName);
+
+        $doc = [];
+
+        $docId = Uuid::uuid4()->toString();
+        $this->documentStore->addDoc($collectionName, $docId, $doc);
+
+        // be aware that this will add the data as an entry to the array which is wrong, because it should be transformed to an object
+        $this->documentStore->upsertDoc($collectionName, $docId, [
+            'some' => [
+                'prop' => 'fuzz',
+            ],
+        ]);
+
+        $doc = $this->documentStore->getDoc($collectionName, $docId);
+        $this->assertArrayHasKey('some', $doc[0], \var_export($doc, true));
     }
 
     /**
