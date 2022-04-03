@@ -17,11 +17,12 @@
   ],
   "require": {
     "php": "^7.2 || ^8.0",
+    "ext-json": "*",
     "ext-pdo": "*",
     "event-engine/php-persistence": "^0.9"
   },
   "require-dev": {
-    "infection/infection": "^0.15.3",
+    "infection/infection": "^0.26.6",
     "malukenho/docheader": "^0.1.8",
     "phpspec/prophecy": "^1.12.1",
     "phpstan/phpstan": "^0.12.48",
@@ -45,6 +46,10 @@
   "config": {
     "sort-packages": true,
     "platform": {
+    },
+    "allow-plugins": {
+      "ocramius/package-versions": true,
+      "infection/extension-installer": true
     }
   },
   "prefer-stable": true,
