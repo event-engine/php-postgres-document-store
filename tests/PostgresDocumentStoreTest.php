@@ -23,6 +23,9 @@ use EventEngine\DocumentStore\Filter\LikeFilter;
 use EventEngine\DocumentStore\Filter\LtFilter;
 use EventEngine\DocumentStore\Filter\NotFilter;
 use EventEngine\DocumentStore\Filter\OrFilter;
+use EventEngine\DocumentStore\OrderBy\AndOrder;
+use EventEngine\DocumentStore\OrderBy\Asc;
+use EventEngine\DocumentStore\OrderBy\Desc;
 use EventEngine\DocumentStore\PartialSelect;
 use PHPUnit\Framework\TestCase;
 use EventEngine\DocumentStore\FieldIndex;
@@ -811,6 +814,92 @@ class PostgresDocumentStoreTest extends TestCase
         );
 
         $this->assertSame(2, $count);
+    }
+
+    /**
+     * @test
+     */
+    public function it_handles_order_by()
+    {
+        $collectionName = 'test_it_handles_order_by';
+        $this->documentStore->addCollection($collectionName);
+
+        $this->documentStore->addDoc($collectionName, Uuid::uuid4()->toString(), ['some' => ['prop' => 'foo']]);
+        $this->documentStore->addDoc($collectionName, Uuid::uuid4()->toString(), ['some' => ['prop' => 'bar']]);
+        $this->documentStore->addDoc($collectionName, Uuid::uuid4()->toString(), ['some' => ['prop' => 'bas']]);
+
+        $filteredDocs = \array_values(\iterator_to_array($this->documentStore->findDocs(
+            $collectionName,
+            new AnyFilter(),
+            null,
+            null,
+            Asc::fromString('some.prop')
+        )));
+
+        $this->assertCount(3, $filteredDocs);
+
+        $this->assertEquals(
+            [
+                ['some' => ['prop' => 'bar']],
+                ['some' => ['prop' => 'bas']],
+                ['some' => ['prop' => 'foo']],
+            ],
+            $filteredDocs
+        );
+
+        $filteredDocs = \array_values(\iterator_to_array($this->documentStore->findDocs(
+            $collectionName,
+            new AnyFilter(),
+            null,
+            null,
+            Desc::fromString('some.prop')
+        )));
+
+        $this->assertCount(3, $filteredDocs);
+
+        $this->assertEquals(
+            [
+                ['some' => ['prop' => 'foo']],
+                ['some' => ['prop' => 'bas']],
+                ['some' => ['prop' => 'bar']],
+            ],
+            $filteredDocs
+        );
+    }
+
+    /**
+     * @test
+     */
+    public function it_handles_and_order_by()
+    {
+        $collectionName = 'test_it_handles_order_by';
+        $this->documentStore->addCollection($collectionName);
+
+        $this->documentStore->addDoc($collectionName, Uuid::uuid4()->toString(), ['some' => ['prop' => 'foo', 'other' => ['prop' => 'bas']]]);
+        $this->documentStore->addDoc($collectionName, Uuid::uuid4()->toString(), ['some' => ['prop' => 'bar', 'other' => ['prop' => 'bat']]]);
+        $this->documentStore->addDoc($collectionName, Uuid::uuid4()->toString(), ['some' => ['prop' => 'bar']]);
+
+        $filteredDocs = \array_values(\iterator_to_array($this->documentStore->findDocs(
+            $collectionName,
+            new AnyFilter(),
+            null,
+            null,
+            AndOrder::by(
+                Asc::fromString('some.prop'),
+                Desc::fromString('some.other')
+            )
+        )));
+
+        $this->assertCount(3, $filteredDocs);
+
+        $this->assertEquals(
+            [
+                ['some' => ['prop' => 'bar']],
+                ['some' => ['prop' => 'bar', 'other' => ['prop' => 'bat']]],
+                ['some' => ['prop' => 'foo', 'other' => ['prop' => 'bas']]],
+            ],
+            $filteredDocs
+        );
     }
 
     /**

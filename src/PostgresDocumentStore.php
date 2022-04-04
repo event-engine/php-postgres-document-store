@@ -17,8 +17,11 @@ use EventEngine\DocumentStore\Index;
 use EventEngine\DocumentStore\OrderBy\OrderBy;
 use EventEngine\DocumentStore\PartialSelect;
 use EventEngine\DocumentStore\Postgres\Exception\RuntimeException;
-use EventEngine\DocumentStore\Postgres\Filter\PostgresFilterProcessor;
 use EventEngine\DocumentStore\Postgres\Filter\FilterProcessor;
+use EventEngine\DocumentStore\Postgres\Filter\PostgresFilterProcessor;
+use EventEngine\DocumentStore\Postgres\OrderBy\OrderByClause;
+use EventEngine\DocumentStore\Postgres\OrderBy\OrderByProcessor;
+use EventEngine\DocumentStore\Postgres\OrderBy\PostgresOrderByProcessor;
 use EventEngine\Util\VariableType;
 
 use function implode;
@@ -43,6 +46,11 @@ final class PostgresDocumentStore implements DocumentStore\DocumentStore
      */
     private $filterProcessor;
 
+    /**
+     * @var OrderByProcessor
+     */
+    private $orderByProcessor;
+
     private $tablePrefix = 'em_ds_';
 
     private $docIdSchema = 'UUID NOT NULL';
@@ -57,7 +65,8 @@ final class PostgresDocumentStore implements DocumentStore\DocumentStore
         string $docIdSchema = null,
         bool $transactional = true,
         bool $useMetadataColumns = false,
-        FilterProcessor $filterProcessor = null
+        FilterProcessor $filterProcessor = null,
+        OrderByProcessor $orderByProcessor = null
     ) {
         $this->connection = $connection;
         $this->connection->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
@@ -66,6 +75,11 @@ final class PostgresDocumentStore implements DocumentStore\DocumentStore
             $filterProcessor = new PostgresFilterProcessor($useMetadataColumns);
         }
         $this->filterProcessor = $filterProcessor;
+
+        if (null === $orderByProcessor) {
+            $orderByProcessor = new PostgresOrderByProcessor($useMetadataColumns);
+        }
+        $this->orderByProcessor = $orderByProcessor;
 
         if(null !== $tablePrefix) {
             $this->tablePrefix = $tablePrefix;
@@ -441,7 +455,7 @@ EOT;
     {
         $doc = $this->getDoc($collectionName, $docId);
 
-        if ($doc !== null) {
+        if($doc !== null) {
             $this->updateDoc($collectionName, $docId, $docOrSubset);
         } else {
             $this->addDoc($collectionName, $docId, $docOrSubset);
@@ -625,12 +639,16 @@ EOT;
         $filterStr = $filterClause->clause();
         $args = $filterClause->args();
 
+        $orderByClause = $orderBy ? $this->orderByProcessor->process($orderBy) : new OrderByClause(null, []);
+        $orderByStr = $orderByClause->clause();
+        $orderByArgs = $orderByClause->args();
+
         $where = $filterStr ? "WHERE $filterStr" : '';
 
         $offset = $skip !== null ? "OFFSET $skip" : '';
         $limit = $limit !== null ? "LIMIT $limit" : '';
 
-        $orderBy = $orderBy ? "ORDER BY " . implode(', ', $this->orderByToSort($orderBy)) : '';
+        $orderBy = $orderByStr ? "ORDER BY $orderByStr" : '';
 
         $query = <<<EOT
 SELECT doc 
@@ -642,7 +660,7 @@ $offset;
 EOT;
         $stmt = $this->connection->prepare($query);
 
-        $stmt->execute($args);
+        $stmt->execute(array_merge($args, $orderByArgs));
 
         while($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
             yield json_decode($row['doc'], true);
@@ -658,12 +676,16 @@ EOT;
         $filterStr = $filterClause->clause();
         $args = $filterClause->args();
 
+        $orderByClause = $orderBy ? $this->orderByProcessor->process($orderBy) : new OrderByClause(null, []);
+        $orderByStr = $orderByClause->clause();
+        $orderByArgs = $orderByClause->args();
+
         $where = $filterStr ? "WHERE $filterStr" : '';
 
         $offset = $skip !== null ? "OFFSET $skip" : '';
         $limit = $limit !== null ? "LIMIT $limit" : '';
 
-        $orderBy = $orderBy ? "ORDER BY " . implode(', ', $this->orderByToSort($orderBy)) : '';
+        $orderBy = $orderByStr ? "ORDER BY $orderByStr" : '';
 
         $query = <<<EOT
 SELECT id, doc 
@@ -675,7 +697,7 @@ $offset;
 EOT;
         $stmt = $this->connection->prepare($query);
 
-        $stmt->execute($args);
+        $stmt->execute(array_merge($args, $orderByArgs));
 
         while($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
             yield $row['id'] => json_decode($row['doc'], true);
@@ -688,6 +710,10 @@ EOT;
         $filterStr = $filterClause->clause();
         $args = $filterClause->args();
 
+        $orderByClause = $orderBy ? $this->orderByProcessor->process($orderBy) : new OrderByClause(null, []);
+        $orderByStr = $orderByClause->clause();
+        $orderByArgs = $orderByClause->args();
+
         $select = $this->makeSelect($partialSelect);
 
         $where = $filterStr ? "WHERE $filterStr" : '';
@@ -695,7 +721,7 @@ EOT;
         $offset = $skip !== null ? "OFFSET $skip" : '';
         $limit = $limit !== null ? "LIMIT $limit" : '';
 
-        $orderBy = $orderBy ? "ORDER BY " . implode(', ', $this->orderByToSort($orderBy)) : '';
+        $orderBy = $orderByStr ? "ORDER BY $orderByStr" : '';
 
         $query = <<<EOT
 SELECT $select 
@@ -708,7 +734,7 @@ EOT;
 
         $stmt = $this->connection->prepare($query);
 
-        $stmt->execute($args);
+        $stmt->execute(array_merge($args, $orderByArgs));
 
         while($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
             yield $row[self::PARTIAL_SELECT_DOC_ID] => $this->transformPartialDoc($partialSelect, $row);
@@ -868,28 +894,6 @@ EOT;
         }
 
         return $partialDoc;
-    }
-
-    private function orderByToSort(DocumentStore\OrderBy\OrderBy $orderBy): array
-    {
-        $sort = [];
-
-        if($orderBy instanceof DocumentStore\OrderBy\AndOrder) {
-            /** @var DocumentStore\OrderBy\Asc|DocumentStore\OrderBy\Desc $orderByA */
-            $orderByA = $orderBy->a();
-            $direction = $orderByA instanceof DocumentStore\OrderBy\Asc ? 'ASC' : 'DESC';
-            $prop = $this->propToJsonPath($orderByA->prop());
-            $sort[] = "{$prop} $direction";
-
-            $sortB = $this->orderByToSort($orderBy->b());
-
-            return array_merge($sort, $sortB);
-        }
-
-        /** @var DocumentStore\OrderBy\Asc|DocumentStore\OrderBy\Desc $orderBy */
-        $direction = $orderBy instanceof DocumentStore\OrderBy\Asc ? 'ASC' : 'DESC';
-        $prop = $this->propToJsonPath($orderBy->prop());
-        return ["{$prop} $direction"];
     }
 
     private function indexToSqlCmd(Index $index, string $collectionName): string
