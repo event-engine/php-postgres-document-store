@@ -42,6 +42,12 @@ final class PostgresOrderByProcessor implements OrderByProcessor
             return ["$sortA, $sortB", array_merge($sortAArgs, $sortBArgs)];
         }
 
+        if ($orderBy instanceof DocumentStore\OrderBy\DocId) {
+            $direction = $orderBy->direction();
+
+            return ["id $direction", []];
+        }
+
         /** @var DocumentStore\OrderBy\Asc|DocumentStore\OrderBy\Desc $orderBy */
         $direction = $orderBy instanceof DocumentStore\OrderBy\Asc ? 'ASC' : 'DESC';
         $prop = $this->propToJsonPath($orderBy->prop());
