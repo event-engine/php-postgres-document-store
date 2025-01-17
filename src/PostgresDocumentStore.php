@@ -61,12 +61,12 @@ final class PostgresDocumentStore implements DocumentStore\DocumentStore
 
     public function __construct(
         \PDO $connection,
-        string $tablePrefix = null,
-        string $docIdSchema = null,
+        ?string $tablePrefix = null,
+        ?string $docIdSchema = null,
         bool $transactional = true,
         bool $useMetadataColumns = false,
-        FilterProcessor $filterProcessor = null,
-        OrderByProcessor $orderByProcessor = null
+        ?FilterProcessor $filterProcessor = null,
+        ?OrderByProcessor $orderByProcessor = null
     ) {
         $this->connection = $connection;
         $this->connection->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
@@ -633,7 +633,7 @@ EOT;
     /**
      * @inheritDoc
      */
-    public function filterDocs(string $collectionName, Filter $filter, int $skip = null, int $limit = null, OrderBy $orderBy = null): \Traversable
+    public function filterDocs(string $collectionName, Filter $filter, ?int $skip = null, ?int $limit = null, ?OrderBy $orderBy = null): \Traversable
     {
         $filterClause = $this->filterProcessor->process($filter);
         $filterStr = $filterClause->clause();
@@ -670,7 +670,7 @@ EOT;
     /**
      * @inheritDoc
      */
-    public function findDocs(string $collectionName, Filter $filter, int $skip = null, int $limit = null, OrderBy $orderBy = null): \Traversable
+    public function findDocs(string $collectionName, Filter $filter, ?int $skip = null, ?int $limit = null, ?OrderBy $orderBy = null): \Traversable
     {
         $filterClause = $this->filterProcessor->process($filter);
         $filterStr = $filterClause->clause();
@@ -704,7 +704,7 @@ EOT;
         }
     }
 
-    public function findPartialDocs(string $collectionName, PartialSelect $partialSelect, Filter $filter, int $skip = null, int $limit = null, OrderBy $orderBy = null): \Traversable
+    public function findPartialDocs(string $collectionName, PartialSelect $partialSelect, Filter $filter, ?int $skip = null, ?int $limit = null, ?OrderBy $orderBy = null): \Traversable
     {
         $filterClause = $this->filterProcessor->process($filter);
         $filterStr = $filterClause->clause();

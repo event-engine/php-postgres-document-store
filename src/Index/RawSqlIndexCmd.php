@@ -35,7 +35,7 @@ final class RawSqlIndexCmd implements Index
         return new self($data['sql'], $data['name'] ?? null);
     }
 
-    public function __construct(string $sql, string $name = null)
+    public function __construct(string $sql, ?string $name = null)
     {
         $this->sql = $sql;
         $this->name = $name;
